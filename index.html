@@ -273,7 +273,7 @@ footer{font-size:13px;color:var(--ink-2);max-width:78ch}
   };
 
   /* ---- link layer ---- */
-  var ET={0x0800:'IPv4',0x0806:'ARP',0x86dd:'IPv6'};
+  var ET={0x0800:'IPv4',0x0806:'ARP',0x86dd:'IPv6',0x888e:'802.1X EAPOL'};
   PK.eth=function(src,dst,type){
     var bc=dst.toLowerCase()==='ff:ff:ff:ff:ff:ff';
     return PK.L('Ethernet II','link',[
@@ -297,7 +297,7 @@ footer{font-size:13px;color:var(--ink-2);max-width:78ch}
   };
 
   /* ---- network layer ---- */
-  var PN={1:'ICMP',6:'TCP',17:'UDP'};
+  var PN={1:'ICMP',6:'TCP',17:'UDP',50:'ESP'};
   PK.ip4=function(o,payload){
     var total=20+payload.length,ttl=o.ttl===undefined?64:o.ttl,id=o.id||0,off=o.off||0;
     var ff=(o.df?0x4000:0)|(o.mf?0x2000:0)|(off&0x1fff);
@@ -423,11 +423,32 @@ footer{font-size:13px;color:var(--ink-2);max-width:78ch}
     if(body)fs.push(PK.fstr('Body',body,descs.body||'The content being transferred.',PK.esc(body.length>60?body.slice(0,60)+'…':body)));
     return PK.L(name,kind,fs);
   };
+
+  PK.crc32=function(b){var c,crc=0xffffffff;for(var i=0;i<b.length;i++){c=(crc^b[i])&255;for(var k=0;k<8;k++)c=(c&1)?(0xedb88320^(c>>>1)):(c>>>1);crc=(crc>>>8)^c;}return (crc^0xffffffff)>>>0;};
+  PK.v6b=function(s){var h=s.split('::'),a=h[0]?h[0].split(':'):[],z=h.length>1&&h[1]?h[1].split(':'):[],o=[],i;
+    if(h.length>1){while(a.length+z.length<8)a.push('0');a=a.concat(z);}
+    for(i=0;i<a.length;i++){var v=parseInt(a[i]||'0',16);o.push((v>>8)&255,v&255);}return o;};
+  PK.fip6=function(n,ip,d){return PK.F(n,PK.v6b(ip),ip,d);};
+  PK.ip6=function(o,payload){
+    var hl=o.hop===undefined?64:o.hop;
+    return PK.L('IPv6','net',[
+      PK.F('Version + Traffic class + Flow label',[0x60,0,0,0],'6 / 0 / 0','Version 6, no traffic class, no flow label. Four bytes, versus the many small fields of IPv4.'),
+      PK.f16('Payload Length',payload.length,'Bytes after this 40-byte header.',payload.length+' bytes'),
+      PK.F('Next Header',[o.next],o.next+' ('+({58:'ICMPv6',6:'TCP',17:'UDP'}[o.next])+')','What follows the header: the same idea as the IPv4 protocol field.'),
+      PK.F('Hop Limit',[hl],hl+' hops','The IPv6 name for TTL. Routers subtract 1 and drop the packet at 0.'),
+      PK.fip6('Source Address',o.src,'128-bit address of the sender.'),
+      PK.fip6('Destination Address',o.dst,'128-bit address of the recipient.')
+    ],'There is no header checksum in IPv6: link layers and transport checksums already protect the data, and routers have less work to do.');
+  };
+  PK.icmp6=function(o,body){
+    var msg=PK.cat([o.type,o.code||0,0,0],body),ph=PK.cat(PK.v6b(o.src),PK.v6b(o.dst),PK.u32(msg.length),[0,0,0,58]),cs=PK.csum(PK.cat(ph,msg));
+    return {bytes:msg.slice(0,2).concat(PK.u16(cs),body),cs:cs};
+  };
 })();
 /* ===== Lab engine ===== */
 (function(){
   var LAB=window.LAB={labs:[],by:{},add:function(l){LAB.labs.push(l);LAB.by[l.id]=l;}};
-  var ORDER=['journey','arp','ip','icmp','udp','tcp','dhcp','nat','dns','tls','http1','proxy','http2','quic','ws','bgp'];
+  var ORDER=['journey','arp','ip','ipv6','icmp','udp','tcp','dhcp','nat','dns','ntp','tls','http1','proxy','socks','http2','quic','ws','webrtc','doh','dnssec','ssh','ftp','smtp','pop3','imap','smb','modbus','wifi','wpa3','radius','captive','wireguard','ipsec','bgp'];
   var $=function(s){return document.querySelector(s);};
   function esc(t){return String(t).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];});}
   var KNAME={link:'Link layer',net:'Network layer',trans:'Transport layer',sec:'Security',app:'Application layer',all:'All layers'};
@@ -622,7 +643,7 @@ footer{font-size:13px;color:var(--ink-2);max-width:78ch}
     var L=cur(),sc=L.scenarios[ST.sc],r=ST.rows[ST.i],A=sc.actors;
     if(!r){$('#stepc').innerHTML='';return;}
     var route=r.note?A[r.f].n+' (local action)':A[r.f].n+' to '+A[r.t].n;
-    var h='<p class="eyebrow"><span>Step '+(ST.i+1)+' of '+ST.rows.length+' · '+esc(route)+'</span><span></span></p><h3>'+esc(r.title||r.label)+'</h3><p>'+(r.text||'')+'</p>';
+    var h='<p class="eyebrow"><span>Step '+(ST.i+1)+' of '+ST.rows.length+' · '+esc(route)+'</span><span></span></p><h3>'+esc(r.title||r.label)+'</h3>'+(r.text?'<p>'+r.text+'</p>':'');
     if(r.drop)h+='<div class="warnbox"><b>This packet is lost on the way.</b> '+L.dropNote+'</div>';
     else if(r.retry)h+='<div class="infobox"><b>Retransmission.</b> The sender noticed nothing came back and sent the same packet again. Compare the elapsed time with the step before.</div>';
     else if(r.lost)h+='<div class="warnbox"><b>This packet is lost on the way.</b> '+(r.lostText||L.dropNote)+'</div>';
@@ -864,14 +885,14 @@ footer{font-size:13px;color:var(--ink-2);max-width:78ch}
   H.enc=function(name,n,seed,desc,txt){return PK.fraw(name,PK.rnd(n,seed),desc||'Encrypted bytes. They look random on purpose: without the key nobody on the path can read them.',txt||(n+' bytes, encrypted'));};
 
   /* ---------- DNS ---------- */
-  var DT={A:1,NS:2,CNAME:5,SOA:6,AAAA:28};
+  var DT={A:1,NS:2,CNAME:5,SOA:6,AAAA:28,OPT:41,DS:43,RRSIG:46,DNSKEY:48};
   function encName(n){var o=[];n.split('.').forEach(function(l){if(l){o.push(l.length);o=o.concat(PK.strb(l));}});o.push(0);return o;}
   H.encName=encName;
   H.dns=function(o){
     var q=o.q,an=o.an||[],ns=o.ns||[],ar=o.ar||[],resp=!!o.resp;
-    var flags=(resp?0x8000:0)|(o.aa?0x0400:0)|(o.rd?0x0100:0)|(o.ra?0x0080:0)|(o.rcode||0);
+    var flags=(resp?0x8000:0)|(o.aa?0x0400:0)|(o.rd?0x0100:0)|(o.ra?0x0080:0)|(o.ad?0x0020:0)|(o.rcode||0);
     var ft=[resp?'response':'query'];if(o.aa)ft.push('authoritative');if(o.rd)ft.push('recursion desired');if(o.ra)ft.push('recursion available');
-    var rn={0:'no error',3:'NXDOMAIN: name does not exist'};if(o.rcode!==undefined&&o.rcode!==0)ft.push(rn[o.rcode]);
+    var rn={0:'no error',2:'SERVFAIL: the server could not give a trustworthy answer',3:'NXDOMAIN: name does not exist'};if(o.ad)ft.push('authenticated data (DNSSEC validated)');if(o.rcode!==undefined&&o.rcode!==0)ft.push(rn[o.rcode]);
     var fs=[
       PK.f16('Transaction ID',o.id,'A random number that lets the asker match a reply to its question.',PK.hex(o.id,4)),
       PK.F('Flags',PK.u16(flags),ft.join(', '),'One bit says query or response. Others say whether the server is authoritative, whether recursion is wanted or offered, and the result code.'),
@@ -892,10 +913,10 @@ footer{font-size:13px;color:var(--ink-2);max-width:78ch}
       var tag=sec+' '+(i+1)+': ';
       fs.push(PK.F(tag+'name',nm,r.name,r.name===q[0]?'A pointer (0xc00c) back to the name in the question, which saves space.':'The name this record is about.'));
       fs.push(PK.f16(tag+'type',DT[r.type],'Record type.',DT[r.type]+' ('+r.type+')'));
-      fs.push(PK.f16(tag+'class',1,'Always 1 (Internet).','1 (IN)'));
+      fs.push(PK.f16(tag+'class',r.cls||1,r.type==='OPT'?'For the OPT pseudo-record this is the largest UDP size the sender accepts.':'Always 1 (Internet).',r.cls?String(r.cls):'1 (IN)'));
       fs.push(PK.f32(tag+'TTL',r.ttl,'How many seconds anyone may cache this record before asking again.',r.ttl+' s'));
       fs.push(PK.f16(tag+'data length',data.length,'Length of the data that follows.',data.length+' bytes'));
-      fs.push(PK.F(tag+'data',data,r.type==='SOA'?'SOA: '+r.data[0]:(r.type==='A'?r.data:r.data),r.type==='A'?'The IPv4 address.':r.type==='NS'?'The name of a server responsible for this zone.':r.type==='SOA'?'Zone administration data. Its last field says how long to cache "does not exist" answers.':'Record data.'));
+      fs.push(PK.F(tag+'data',data,r.type==='SOA'?'SOA: '+r.data[0]:(typeof r.data==='string'?r.data:r.type+' data, '+data.length+' bytes'),r.type==='A'?'The IPv4 address.':r.type==='RRSIG'?'A digital signature over the record set. A validating resolver checks it with the zone\'s public key.':r.type==='DNSKEY'?'The zone\'s public key.':r.type==='OPT'?'EDNS options. The DO flag in the TTL field means: please include DNSSEC records.':r.type==='NS'?'The name of a server responsible for this zone.':r.type==='SOA'?'Zone administration data. Its last field says how long to cache "does not exist" answers.':'Record data.'));
     }
     an.forEach(function(r,i){rr('Answer',r,i);});
     ns.forEach(function(r,i){rr('Authority',r,i);});
@@ -966,6 +987,12 @@ footer{font-size:13px;color:var(--ink-2);max-width:78ch}
     var h=hd.slice();h.push(['Content-Length',String(body?body.length:0)]);
     return PK.textLayer('HTTP response','app','HTTP/1.1 '+code+' '+reason,h,body||null,{startName:'Status line',start:'Protocol version, a three-digit status code and a short reason.',h:{'Content-Type':'The format of the body.','Content-Length':'Body size in bytes, so the client knows where the response ends.',Location:'Where to go instead.',Server:'Names the server software.'}});
   };
+})();
+
+(function(){
+  H.line=function(name,text,desc){return PK.L(name,'app',[PK.fstr('Text',text,desc||'Plain text sent over the connection. Anyone on the path can read it.')]);};
+  H.tf=function(sip,sport,cport,o){o=o||{};return H.est(H.flow(H.lap,cport||51700,sip,sport,o));};
+  H.dnsPk=function(out,ip,id,msg,o){o=o||{};return PK.pkt({eth:o.eth||(out?H.out:H.in),ip:{src:out?H.lap:ip,dst:out?ip:H.lap,ttl:out?64:57,id:id},udp:{sp:out?53811:53,dp:out?53:53811},app:[msg]});};
 })();
 /* ===== Labs: ARP, IP, ICMP, UDP, DHCP, NAT ===== */
 (function(){
@@ -1840,6 +1867,907 @@ footer{font-size:13px;color:var(--ink-2);max-width:78ch}
       {q:'Why does a browser send CONNECT example.com:443 to a proxy?',o:['To ask for a cached page','To open a tunnel so TLS can run end to end','To change DNS','To log in'],a:1,h:'The proxy cannot read HTTPS.',x:'CONNECT turns the proxy into a blind byte relay, so the TLS handshake and data pass through untouched.'},
       {q:'Behind a reverse proxy, how does a backend learn the real client IP?',o:['From the TCP source address','From a header such as X-Forwarded-For','From ARP','It cannot'],a:1,h:'The TCP connection comes from the proxy.',x:'The proxy adds the client address in X-Forwarded-For (or Forwarded). Backends must only trust it from their own proxy.'},
       {q:'Which is NOT a typical benefit of a reverse proxy?',o:['Load balancing','TLS termination','Hiding the number of backend servers','Reading end-to-end encrypted HTTPS between a client and a different site'],a:3,h:'It only handles traffic addressed to it.',x:'A reverse proxy handles its own site\'s traffic. Reading HTTPS between a client and a different site would need TLS inspection by a forward proxy with a trusted certificate.'}
+    ]
+  });
+})();
+/* ===== More labs, part 1: IPv6, NTP, SSH, FTP, SMTP, POP3, IMAP ===== */
+(function(){
+  var S=H.S,N=H.N;
+
+  /* ---------------- IPv6 ---------------- */
+  var LL='fe80::3e22:fbff:fe4a:910e',RLL='fe80::9e3d:cfff:fe0b:7e42',GL='2001:db8:1:1:3e22:fbff:fe4a:910e',SRV6='2001:db8:80::1';
+  function p6(eth,src,dst,hop,type,code,body,nm,desc){
+    var ic=PK.icmp6({type:type,code:code,src:src,dst:dst},body);
+    var l4=PK.L('ICMPv6','net',[PK.F('Type',[type],type+' ('+nm+')',desc||''),PK.f8('Code',code||0,'Sub-type.'),PK.F('Checksum',PK.u16(ic.cs),PK.hex(ic.cs,4),'Covers the ICMPv6 message and a pseudo-header with both IPv6 addresses. Unlike IPv4, ICMPv6 checksums include addresses.')].concat(body.fields||[PK.fraw('Body',body,'Message contents.',body.length+' bytes')]));
+    return PK.done([PK.eth(eth[0],eth[1],0x86dd),PK.ip6({src:src,dst:dst,next:58,hop:hop},ic.bytes),l4],{});
+  }
+  function pk6(eth,src,dst,hop,type,code,fields,nm,desc){
+    var body=[];fields.forEach(function(f){f.b.forEach(function(x){body.push(x);});});body.fields=fields;
+    return p6(eth,src,dst,hop,type,code,body,nm,desc);
+  }
+  LAB.add({
+    id:'ipv6',n:'IPv6',name:'IPv6: the 128-bit successor',kind:'net',lan:true,hop:'lan',
+    tagline:'Bigger addresses, a simpler header, and neighbour discovery that replaces ARP.',
+    why:'IPv4 has about 4 billion addresses, which ran out long ago. IPv6 has 2^128 of them, enough that every device can have its own public address and NAT becomes unnecessary. The header is simpler (fixed 40 bytes, no checksum, no fragmentation by routers), and ICMPv6 takes over many jobs: finding neighbours (replacing ARP), configuring addresses automatically (SLAAC) and reporting errors.',
+    ideas:[['Neighbour Discovery','ICMPv6 Neighbor Solicitation and Advertisement replace ARP. They use targeted multicast instead of a broadcast, so unrelated hosts are not disturbed.'],['Self-configuration (SLAAC)','A router advertises the network prefix. The host appends a 64-bit interface identifier and has a global address, with no DHCP needed.'],['Link-local addresses','Every interface has an fe80:: address that works only on the local link. It is used for discovery and for talking to the router.']],
+    facts:[['Address size','128 bits, written in hex groups'],['Header','Fixed 40 bytes, no checksum'],['Multicast MAC','33:33 + last 4 bytes of the address'],['Next Header values','58 ICMPv6, 6 TCP, 17 UDP']],
+    dropMode:'retry',rto:1000,dropNote:'The host retransmits the message after a short wait, as ARP does.',
+    scenarios:[
+      {id:'ndp',l:'Neighbour discovery',d:'The IPv6 equivalent of ARP: find the router\'s MAC address.',
+       actors:[{n:'Laptop',s:'fe80::3e22:...910e'},{n:'Router',s:'fe80::9e3d:...7e42'}],
+       steps:function(){return [
+        S(0,1,'Neighbor Solicitation','Who owns this address? (multicast)','Sent to the <b>solicited-node multicast</b> address ff02::1:ff0b:7e42, made from the last 24 bits of the target. Only hosts whose address ends in 0b:7e42 listen, so there is no network-wide broadcast. The Ethernet destination 33:33:ff:0b:7e:42 is derived the same way.',pk6([H.lapMac,'33:33:ff:0b:7e:42'],LL,'ff02::1:ff0b:7e42',255,135,0,[PK.f32('Reserved',0,'Unused.'),PK.fip6('Target Address',RLL,'The address we want a MAC for.'),PK.F('Option: Source link-layer address',PK.cat([1,1],PK.macb(H.lapMac)),H.lapMac,'Our own MAC, so the target can reply without asking us.')],'Neighbor Solicitation','Asks who owns the target IPv6 address.')),
+        S(1,0,'Neighbor Advertisement','I own it, my MAC is 9c:3d:cf…','A unicast answer with the Solicited and Override flags set, and the router\'s MAC in the target link-layer option. The hop limit is 255 in both messages: routers cannot forward them, so a receiver can prove they came from the local link.',pk6(H.in,RLL,LL,255,136,0,[PK.F('Flags',[0x60,0,0,0],'Router, Solicited, Override','The sender is a router, this answers a solicitation, and the entry should replace any older one.'),PK.fip6('Target Address',RLL,'The address being answered for.'),PK.F('Option: Target link-layer address',PK.cat([2,1],PK.macb(H.rtrMac)),H.rtrMac,'The MAC address the laptop was looking for.')],'Neighbor Advertisement','Answers a solicitation with a MAC address.'))
+       ];}},
+      {id:'slaac',l:'Auto-configuration',d:'A host with no global address learns the network prefix from the router.',
+       actors:[{n:'Laptop',s:'link-local only'},{n:'Router',s:'fe80::9e3d:...7e42'}],
+       st0:{0:'fe80:: only'},
+       steps:function(){return [
+        S(0,1,'Router Solicitation','Is there a router here?','Sent to ff02::2, the all-routers multicast group. The host only has its link-local address (made from its MAC), so that is the source.',pk6([H.lapMac,'33:33:00:00:00:02'],LL,'ff02::2',255,133,0,[PK.f32('Reserved',0,'Unused.'),PK.F('Option: Source link-layer address',PK.cat([1,1],PK.macb(H.lapMac)),H.lapMac,'Our MAC address.')],'Router Solicitation','A host asking routers to announce themselves.')),
+        S(1,0,'Router Advertisement','Prefix 2001:db8:1:1::/64','The router announces the <b>prefix</b>, the MTU and that hosts may configure themselves (the A flag). The laptop appends its own 64-bit identifier and now has a global address, with no DHCP server involved.',pk6([H.rtrMac,'33:33:00:00:00:01'],RLL,'ff02::1',255,134,0,[PK.f8('Current hop limit',64,'Hop limit hosts should use.'),PK.F('Flags',[0],'none','No managed (M) or other (O) flags: use SLAAC only.'),PK.f16('Router lifetime',1800,'Seconds this router may be used as the default gateway.','1800 s'),PK.f32('Reachable time',0,'Unspecified.'),PK.f32('Retransmit timer',0,'Unspecified.'),PK.F('Option: Source link-layer address',PK.cat([1,1],PK.macb(H.rtrMac)),H.rtrMac,'The router\'s MAC.'),PK.F('Option: MTU',PK.cat([5,1,0,0],PK.u32(1500)),'1500','Link MTU.'),PK.F('Option: Prefix information',PK.cat([3,4,64,0xc0],PK.u32(2592000),PK.u32(604800),PK.u32(0),PK.v6b('2001:db8:1:1::')),'2001:db8:1:1::/64','The prefix for this network. Flags: on-link and autonomous (SLAAC allowed). Lifetimes in seconds.')],'Router Advertisement','A router announcing itself and the network prefix.'),{st:{0:'2001:db8:1:1:3e22:...'}}),
+        N(0,'builds its address','Address assembled','Prefix 2001:db8:1:1::/64 + interface identifier 3e22:fbff:fe4a:910e (derived from the MAC, or random for privacy) gives <b>'+GL+'</b>. Before using it the host runs duplicate address detection with a neighbour solicitation.',{st:{0:'global address ready'}})
+       ];}},
+      {id:'ping6',l:'Ping over IPv6',d:'An echo request and reply across the internet, using ICMPv6 and a global address.',hop:1,
+       actors:[{n:'Laptop',s:'2001:db8:1:1::...'},{n:'Server',s:'2001:db8:80::1'}],
+       steps:function(){
+        function echo(t,dir){var out=dir==='out';return pk6(out?H.out:H.in,out?GL:SRV6,out?SRV6:GL,out?64:56,t,0,[PK.f16('Identifier',0x2f61,'Matches replies to the ping program.',PK.hex(0x2f61,4)),PK.f16('Sequence number',1,'Counts pings.'),PK.fraw('Data',PK.rnd(32,3),'Padding copied back by the target.','32 bytes')],t===128?'Echo Request':'Echo Reply',t===128?'"Are you there?"':'"Yes."');}
+        return [
+        S(0,1,'Echo Request (type 128)','Ping, IPv6 style','Same idea as IPv4 ping but the type numbers differ: <b>128</b> request, <b>129</b> reply. The Ethernet destination is the router, and the IPv6 destination is the server. No NAT changes the source address: it stays globally unique end to end.',echo(128,'out')),
+        S(1,0,'Echo Reply (type 129)','The reply','The reply\'s checksum covers the addresses too, so a reply with the wrong source address would fail verification.',echo(129,'in'))
+       ];}}
+    ],
+    quiz:[
+      {q:'What replaces ARP in IPv6?',o:['DHCPv6','Neighbor Discovery in ICMPv6','DNS','NAT'],a:1,h:'It uses multicast, not broadcast.',x:'Neighbor Solicitation and Advertisement do the job of ARP request and reply.'},
+      {q:'Why can IPv6 usually do without NAT?',o:['It is encrypted','Every device can have a public address','It uses UDP','Routers rewrite ports'],a:1,h:'Think about how many addresses exist.',x:'The address space is large enough for every device to be globally addressable.'},
+      {q:'What does a Router Advertisement provide?',o:['A password','The network prefix for auto-configuration','The DNS root','A MAC filter'],a:1,h:'SLAAC.',x:'Hosts combine the advertised /64 prefix with their own identifier to build an address.'}
+    ]
+  });
+
+  /* ---------------- NTP ---------------- */
+  var NS='129.6.15.28',U0=1794150000;
+  function ntpts(ms){var s=Math.floor(ms/1000),fr=Math.round((ms-s*1000)/1000*4294967296);return PK.cat(PK.u32(s+2208988800),PK.u32(fr));}
+  function ntpf(n,ms,d){var dt=new Date(ms);return PK.F(n,ntpts(ms),dt.toISOString().replace('T',' ').replace('Z',' UTC'),d);}
+  function ntp(mode,o){
+    var z=PK.fraw('Zero timestamp',PK.fill(8,0),'Not set in the first request.','0');
+    return PK.L('NTP','app',[
+      PK.F('Leap + Version + Mode',[mode===3?0x23:0x24],'no warning, version 4, mode '+mode+(mode===3?' (client)':' (server)'),'Two bits warn of a leap second, three bits give the version, three bits the mode.'),
+      PK.f8('Stratum',mode===3?0:2,mode===3?'0 means unspecified in a request.':'Distance from a reference clock. Stratum 1 is attached to an atomic clock or GPS, 2 syncs to stratum 1, and so on.',mode===3?'0 (request)':'2 (secondary)'),
+      PK.f8('Poll',6,'Log2 of the polling interval in seconds.','6 (64 s)'),
+      PK.f8('Precision',0xec,'Log2 of clock precision in seconds.','-20 (about 1 µs)'),
+      PK.f32('Root delay',mode===3?0:0x00000400,'Round trip time to the reference clock.'),
+      PK.f32('Root dispersion',mode===3?0:0x00000800,'Maximum error relative to the reference clock.'),
+      PK.fraw('Reference ID',mode===3?[0,0,0,0]:PK.ipb('216.239.35.0'),'Identifies the upstream source.',mode===3?'none':'216.239.35.0'),
+      mode===3?z:ntpf('Reference timestamp',o.ref,'When the server clock was last set.'),
+      mode===3?z:ntpf('Origin timestamp T1',o.t1,'Copied from the client\'s transmit time. It lets the client match the reply to its request.'),
+      mode===3?z:ntpf('Receive timestamp T2',o.t2,'When the server received the request, by the server\'s clock.'),
+      ntpf(mode===3?'Transmit timestamp T1':'Transmit timestamp T3',mode===3?o.t1:o.t3,mode===3?'When the client sent this request, by the client\'s clock.':'When the server sent this reply, by the server\'s clock.')
+    ]);
+  }
+  LAB.add({
+    id:'ntp',n:'NTP',name:'NTP: agreeing on the time',kind:'app',hop:1,
+    tagline:'How your computer sets its clock from the internet, and why four timestamps beat one.',
+    why:'Certificates, logs, Kerberos, two-factor codes and distributed databases all fail if clocks disagree. NTP asks a time server for the time, but the answer takes time to travel. So the packet carries four timestamps, which let the client estimate both how wrong its clock is and how long the trip took, and cancel the network delay out of the result.',
+    ideas:[['Four timestamps','T1 client send, T2 server receive, T3 server send, T4 client receive. Offset = ((T2 − T1) + (T3 − T4)) ÷ 2. Delay = (T4 − T1) − (T3 − T2).'],['Stratum','The hierarchy of clocks. Stratum 0 are reference clocks, stratum 1 servers connect to them, stratum 2 sync to those.'],['Slew, do not jump','Small errors are fixed by slightly speeding up or slowing the clock. Only large errors cause a step.']],
+    facts:[['Transport','UDP port 123'],['Packet size','48 bytes of NTP data'],['Accuracy','Milliseconds over the internet, microseconds with PTP'],['Epoch','Seconds since 1900, not 1970']],
+    dropMode:'retry',rto:1000,dropNote:'NTP just asks again at the next poll. One lost sample is harmless.',
+    scenarios:[
+      {id:'sync',l:'Clock sync',d:'The laptop\'s clock is 120 ms behind. One exchange measures that, assuming the same delay each way.',
+       actors:[{n:'Laptop',s:'client'},{n:'NTP server',s:'129.6.15.28'}],
+       steps:function(){var T1=U0*1000+100,T2=T1+140,T3=T2+1,T4=T1+41,ref=U0*1000-30000;
+        var q=H.udp('out',NS,40123,123,[ntp(3,{t1:T1})],{id:0x3001}),r=H.udp('in',NS,123,40123,[ntp(4,{ref:ref,t1:T1,t2:T2,t3:T3})],{id:0x3002,ttl:50});
+        return [
+        S(0,1,'request: T1','Client request','The client writes its own clock reading as <b>T1</b> in the Transmit field. Everything else is zero. The whole thing is a 48-byte UDP datagram.',q,{hop:0.5}),
+        S(1,0,'reply: T1, T2, T3','Server reply with three timestamps','The server echoes T1 and adds <b>T2</b> (when the request arrived) and <b>T3</b> (when the reply left), both by its own clock. The client notes <b>T4</b>, its clock at arrival.',r,{hop:0.5}),
+        N(0,'offset +120 ms, delay 40 ms','Compute the correction','With T2 − T1 = 140 ms and T3 − T4 = 100 ms (illustrative numbers), offset = (140 + 100) ÷ 2 = <b>+120 ms</b> and round-trip delay = 41 − 1 = <b>40 ms</b>. The network delay cancels out, so the client adjusts its clock forward by 120 ms.',{})
+       ];}}
+    ],
+    quiz:[
+      {q:'Why does NTP use four timestamps instead of one?',o:['For encryption','To separate the network delay from the clock error','To count hops','To reduce packet size'],a:1,h:'The reply spends time in transit.',x:'Two timestamps from each side let the client estimate both offset and delay.'},
+      {q:'What does a stratum number mean?',o:['Accuracy in ms','Distance from a reference clock','Number of packets','Port number'],a:1,h:'Lower is closer to the source.',x:'Stratum 1 is directly connected to a reference clock; each hop away adds one.'},
+      {q:'Which transport does NTP use?',o:['TCP 80','UDP 123','TCP 443','UDP 53'],a:1,h:'Small, quick messages.',x:'UDP port 123.'}
+    ]
+  });
+
+  /* ---------------- SSH ---------------- */
+  var SS='203.0.113.80';
+  function sstr(n,s,d){var b=typeof s==='string'?PK.strb(s):s;return PK.fraw(n,PK.cat(PK.u32(b.length),b),d,typeof s==='string'?'"'+(s.length>50?s.slice(0,50)+'…':s)+'"':b.length+' bytes');}
+  function spkt(nm,fields,mac){
+    var sum=H.sum(fields),pad=4;while((5+sum+pad)%8)pad++;
+    var fs=[PK.f32('Packet length',1+sum+pad,'Length of the rest of the packet (excluding the MAC).',(1+sum+pad)+' bytes'),PK.f8('Padding length',pad,'Random padding makes the packet a multiple of the block size.')].concat(fields,[PK.fraw('Random padding',PK.rnd(pad,pad),'Padding that hides the exact message length.',pad+' bytes')]);
+    if(mac)fs.push(PK.fraw('MAC',PK.rnd(16,99),'Authentication tag that detects tampering.','16 bytes'));
+    return PK.L('SSH: '+nm,'sec',fs);
+  }
+  function kexinit(srv){
+    var cookie=PK.rnd(16,srv?5:6);
+    var lists=[['kex_algorithms','curve25519-sha256,ecdh-sha2-nistp256,diffie-hellman-group14-sha256','How the two sides will agree on a shared secret.'],['server_host_key_algorithms','ssh-ed25519,rsa-sha2-512','Key types the server may use to prove its identity.'],['encryption_algorithms_c2s','chacha20-poly1305@openssh.com,aes256-gcm@openssh.com','Ciphers for client-to-server data.'],['encryption_algorithms_s2c','chacha20-poly1305@openssh.com,aes256-gcm@openssh.com','Ciphers for server-to-client data.'],['mac_algorithms_c2s','hmac-sha2-256','Message authentication.'],['mac_algorithms_s2c','hmac-sha2-256','Message authentication.'],['compression_c2s','none','Compression.'],['compression_s2c','none','Compression.']];
+    var f=[PK.f8('Message type',20,'20 = key exchange init.','20 (SSH_MSG_KEXINIT)'),PK.fraw('Cookie',cookie,'Random bytes that make each exchange unique.','16 bytes')];
+    lists.forEach(function(l){f.push(sstr(l[0],l[1],l[2]));});
+    f.push(sstr('languages (both)','','Unused.'));f.push(PK.f8('First KEX packet follows',0,'No guessed first packet.'));f.push(PK.f32('Reserved',0,'Reserved.'));
+    return spkt('KEXINIT',f,false);
+  }
+  LAB.add({
+    id:'ssh',n:'SSH',name:'SSH: secure remote access',kind:'sec',hop:1,rto:1000,
+    tagline:'A remote shell, file copy and port forwarding over an encrypted, authenticated channel.',
+    why:'SSH replaced Telnet, which sent passwords in clear text. The two sides first agree on algorithms, then run a key exchange that creates session keys. The server proves who it is with its host key, and from then on everything is encrypted, including your login. You then prove your identity with a password or, better, a key pair.',
+    ideas:[['Trust on first use','The first time you connect you are shown the server\'s key fingerprint. It is saved in known_hosts, and a later mismatch triggers a loud warning about a possible man-in-the-middle.'],['Keys beat passwords','With key authentication the private key never leaves your machine. The server only holds the public key.'],['Every keystroke is a packet','In an interactive shell each key typed becomes a tiny encrypted packet, and the echo comes back the same way.']],
+    facts:[['Layer','Application, secures itself'],['Port','TCP 22'],['Used for','Shell, scp/sftp, tunnels, Git'],['Replaced','Telnet, rlogin']],
+    dropNote:'TCP resends the segment. In an interactive shell you would notice the typed character appearing late.',
+    scenarios:[
+      {id:'setup',l:'Connection setup',d:'Version banners, algorithm negotiation, key exchange, then encrypted login.',
+       actors:[{n:'Client',s:'192.168.1.23'},{n:'SSH server',s:'203.0.113.80:22'}],
+       steps:function(){var f=H.tf(SS,22,51700);
+        return [
+        S(1,0,'SSH-2.0-OpenSSH_9.6','Server banner (plain text)','Both sides begin by announcing the protocol version and software. This is the only readable part of an SSH connection.',f.seg('s','PSH,ACK',[H.line('SSH version banner','SSH-2.0-OpenSSH_9.6p1 Ubuntu\r\n','Protocol version, then the software name.')])),
+        S(0,1,'SSH-2.0-OpenSSH_9.4','Client banner','The client answers with its own.',f.seg('c','PSH,ACK',[H.line('SSH version banner','SSH-2.0-OpenSSH_9.4\r\n','Protocol version, then the software name.')])),
+        S(0,1,'KEXINIT','Client lists its algorithms','Still unencrypted: each side lists the key exchange, host key, cipher and MAC algorithms it supports, in order of preference. Look in the ASCII column. The first match wins.',f.seg('c','PSH,ACK',[kexinit(false)])),
+        S(1,0,'KEXINIT','Server lists its algorithms','The two lists are compared. Here they will settle on curve25519 and ChaCha20-Poly1305.',f.seg('s','PSH,ACK',[kexinit(true)])),
+        S(0,1,'KEX_ECDH_INIT','Client public key','The client\'s one-time public value for the elliptic-curve Diffie-Hellman exchange.',f.seg('c','PSH,ACK',[spkt('KEX_ECDH_INIT',[PK.f8('Message type',30,'30 = ECDH init.','30 (SSH_MSG_KEX_ECDH_INIT)'),sstr('Client ephemeral key (Q_C)',PK.rnd(32,41),'The client\'s public value.')],false)])),
+        S(1,0,'KEX_ECDH_REPLY + NEWKEYS','Server key, signature, and "switch now"','The server returns its <b>host key</b>, its own public value and a <b>signature</b> over the exchange hash. The client checks the host key against known_hosts, which is where first-use trust or a mismatch warning happens. NEWKEYS follows to say "everything after this is encrypted".',f.seg('s','PSH,ACK',[spkt('KEX_ECDH_REPLY',[PK.f8('Message type',31,'31 = ECDH reply.','31 (SSH_MSG_KEX_ECDH_REPLY)'),sstr('Server host key',PK.rnd(51,42),'The server\'s public identity key (ssh-ed25519).'),sstr('Server ephemeral key (Q_S)',PK.rnd(32,43),'The server\'s public value.'),sstr('Signature',PK.rnd(83,44),'Proves the server owns the host key.')],false),spkt('NEWKEYS',[PK.f8('Message type',21,'21 = new keys.','21 (SSH_MSG_NEWKEYS)')],false)])),
+        S(0,1,'NEWKEYS','Client agrees','Both sides computed the same session keys and now switch ciphers.',f.seg('c','PSH,ACK',[spkt('NEWKEYS',[PK.f8('Message type',21,'21 = new keys.','21 (SSH_MSG_NEWKEYS)')],false)])),
+        S(0,1,'encrypted: login request','Authentication, now encrypted','From here every packet is encrypted and authenticated: the length field, the message type and the MAC are all random-looking. The login (a key signature or a password) travels inside.',f.seg('c','PSH,ACK',[PK.L('SSH: encrypted packet','sec',[H.enc('Encrypted packet',68,51),PK.fraw('MAC',PK.rnd(16,52),'Authentication tag.','16 bytes')])]),{st:{0:'encrypted'}}),
+        S(1,0,'encrypted: success','Login accepted','The server answers inside the encrypted channel. A shell session can now be opened.',f.seg('s','PSH,ACK',[PK.L('SSH: encrypted packet','sec',[H.enc('Encrypted packet',20,53),PK.fraw('MAC',PK.rnd(16,54),'Authentication tag.','16 bytes')])]))
+       ];}},
+      {id:'typing',l:'Typing in a shell',d:'Each keystroke becomes a small encrypted packet, and the server echoes it back.',
+       actors:[{n:'Client',s:'192.168.1.23'},{n:'SSH server',s:'203.0.113.80:22'}],
+       steps:function(){var f=H.tf(SS,22,51701),out=[];
+        function enc(n,sd){return PK.L('SSH: encrypted packet','sec',[H.enc('Encrypted packet',n,sd),PK.fraw('MAC',PK.rnd(16,sd+1),'Authentication tag.','16 bytes')]);}
+        ['l','s'].forEach(function(ch,i){
+          var a=f.seg('c','PSH,ACK',[enc(20,60+i*4)]),b=f.seg('s','PSH,ACK',[enc(20,62+i*4)]);
+          out.push(S(0,1,'key "'+ch+'"','You type "'+ch+'"','One character becomes a '+a.len+'-byte frame: '+(a.len-66)+' bytes of SSH data around a 1-byte character, plus TCP, IP and Ethernet headers. Nobody can tell which key it was.',a));
+          out.push(S(1,0,'echo of "'+ch+'"','The server echoes it','The remote shell echoes the character so you see it on screen. This is why high latency makes SSH sessions feel laggy.',b));
+        });
+        out.push(S(0,1,'Enter','You press Enter','The command is executed remotely.',f.seg('c','PSH,ACK',[enc(20,80)])));
+        out.push(S(1,0,'command output','Output returns','The listing arrives as one larger encrypted packet.',f.seg('s','PSH,ACK',[enc(180,82)])));
+        return out;}}
+    ],
+    quiz:[
+      {q:'What does a mismatched host key warning protect you from?',o:['A weak password','Connecting to an impostor server','Packet loss','DNS errors'],a:1,h:'The host key proves the server\'s identity.',x:'A changed key may mean someone is intercepting the connection, or the server was legitimately reinstalled.'},
+      {q:'Which part of an SSH connection is readable on the wire?',o:['The password','The version banner and algorithm lists','The commands','The files'],a:1,h:'Before keys exist.',x:'Only the banner and the KEXINIT lists are plaintext. Everything after NEWKEYS is encrypted.'},
+      {q:'Why is key-based login safer than a password?',o:['It is faster','The private key never leaves your machine','It uses UDP','It skips the handshake'],a:1,h:'Think about what is sent to the server.',x:'The client proves it holds the key by signing data, without ever sending the secret.'}
+    ]
+  });
+
+  /* ---------------- FTP ---------------- */
+  var FS='203.0.113.80';
+  LAB.add({
+    id:'ftp',n:'FTP',name:'FTP: two connections for file transfer',kind:'app',hop:1,rto:1000,
+    tagline:'The classic file transfer protocol: plain text commands on one connection, file data on another.',
+    why:'FTP predates modern security. A control connection on port 21 carries readable commands such as USER, PASS and RETR, and each file or directory listing travels over a separate data connection. That design is why FTP struggles with NAT and firewalls, and why passwords and files are visible to anyone on the path. SFTP (over SSH) and FTPS (FTP over TLS) are the safer replacements.',
+    ideas:[['Control and data','Commands and replies use port 21. Every transfer opens a fresh data connection.'],['Passive mode','The server opens a port and tells the client with PASV; the client connects to it. This works through NAT because the client makes both connections.'],['Cleartext','The username and password are typed in plain text. Do not use FTP over untrusted networks.']],
+    facts:[['Ports','TCP 21 control, data on 20 or a negotiated port'],['Replies','3-digit codes: 2xx ok, 3xx need more, 4xx/5xx errors'],['Modes','Active (PORT) and passive (PASV)'],['Safer','SFTP, FTPS']],
+    dropNote:'TCP resends the segment.',
+    scenarios:[
+      {id:'pasv',l:'Passive download',d:'Log in, ask for passive mode, and download a file over a second connection.',
+       actors:[{n:'Client',s:'192.168.1.23'},{n:'FTP server',s:'203.0.113.80'}],
+       steps:function(){var c=H.tf(FS,21,51710),d=H.flow(H.lap,51711,FS,50091);
+        function cm(t){return H.line('FTP command',t+'\r\n','A text command followed by CR LF.');}
+        function rp(t){return H.line('FTP reply',t+'\r\n','A three-digit status code followed by text.');}
+        var file='Hello from FTP!\r\nThis is file.txt\r\n';
+        return [
+        S(1,0,'220 ready','Server greeting','The control connection opens with a readable greeting.',c.seg('s','PSH,ACK',[rp('220 FTP server ready')])),
+        S(0,1,'USER ana','Username','Typed in plain text.',c.seg('c','PSH,ACK',[cm('USER ana')])),
+        S(1,0,'331 password required','Server asks for the password','',c.seg('s','PSH,ACK',[rp('331 Password required for ana')])),
+        S(0,1,'PASS hunter2','Password, in the clear','Find it in the ASCII column. This is why FTP is unsafe on untrusted networks.',c.seg('c','PSH,ACK',[cm('PASS hunter2')])),
+        S(1,0,'230 logged in','Login succeeded','',c.seg('s','PSH,ACK',[rp('230 User ana logged in')])),
+        S(0,1,'PASV','Ask for passive mode','"Please open a port and I will connect to it."',c.seg('c','PSH,ACK',[cm('PASV')])),
+        S(1,0,'227 (…195,171)','Server names its data port','The six numbers are the IP address (203,0,113,80) and the port as two bytes: 195 × 256 + 171 = <b>50091</b>.',c.seg('s','PSH,ACK',[rp('227 Entering Passive Mode (203,0,113,80,195,171)')])),
+        S(0,1,'RETR file.txt','Request the file','The command still goes over the control connection.',c.seg('c','PSH,ACK',[cm('RETR file.txt')])),
+        S(0,1,'SYN to port 50091','New TCP connection for the data','The client opens a second connection to the announced port. Passive mode works through NAT because both connections start from the client.',d.seg('c','SYN'),{st:{0:'data connection opening'}}),
+        S(1,0,'SYN-ACK','Server accepts','',d.seg('s','SYN,ACK')),
+        S(0,1,'ACK','Data connection open','',d.seg('c','ACK')),
+        S(1,0,'150 opening data','Transfer starting','',c.seg('s','PSH,ACK',[rp('150 Opening BINARY mode data connection')])),
+        S(1,0,'file contents','The file itself','The bytes of file.txt travel on the data connection, with no framing: the connection closing marks the end of the file.',d.seg('s','PSH,ACK',[H.line('File data',file,'The raw file contents.')])),
+        S(1,0,'226 complete','Transfer complete','The final status arrives on the control connection.',c.seg('s','PSH,ACK',[rp('226 Transfer complete')]))
+       ];}},
+      {id:'active',l:'Active mode problem',d:'In active mode the server connects back to the client, which NAT and firewalls block.',
+       actors:[{n:'Client',s:'192.168.1.23'},{n:'FTP server',s:'203.0.113.80'}],
+       steps:function(){var c=H.tf(FS,21,51712),d=H.flow(FS,20,H.lap,51210,{ethOut:H.in,ethIn:H.out});
+        return [
+        S(0,1,'PORT 192,168,1,23,200,10','Client says: connect to me','The client announces its <b>private</b> IP and a port (200 × 256 + 10 = 51210) and expects the server to open the data connection.',c.seg('c','PSH,ACK',[H.line('FTP command','PORT 192,168,1,23,200,10\r\n','Client address and port for the data connection.')])),
+        S(1,0,'200 PORT ok','Server agrees','',c.seg('s','PSH,ACK',[H.line('FTP reply','200 PORT command successful\r\n','')])),
+        S(1,0,'SYN from port 20','Server tries to connect in','The server\'s inbound SYN to a private address is dropped by the home router, which has no NAT mapping for it.',d.seg('c','SYN'),{lost:true,lostText:'The router drops the unsolicited inbound connection (see the NAT lab). Some firewalls rewrite PORT commands to work around this, which is fragile.'}),
+        N(0,'transfer fails','Why passive mode exists','Because the client initiates both connections in passive mode, NAT and firewalls treat both as ordinary outbound traffic.',{})
+       ];}}
+    ],
+    quiz:[
+      {q:'In FTP passive mode, who opens the data connection?',o:['The server connects to the client','The client connects to the server','A third host','Neither'],a:1,h:'This is what helps with NAT.',x:'The client opens both connections, so NAT sees only outbound traffic.'},
+      {q:'What does the reply "227 Entering Passive Mode (203,0,113,80,195,171)" tell the client?',o:['Server IP and port 50091','Its own address','Login failed','A file size'],a:0,h:'195 × 256 + 171.',x:'The last two numbers are the port as high byte and low byte.'},
+      {q:'What is the main security flaw of plain FTP?',o:['Slow transfers','Credentials and data are sent unencrypted','It uses UDP','It has no passwords'],a:1,h:'Look at the PASS command.',x:'Anyone on the path can read the username, password and files. Use SFTP or FTPS.'}
+    ]
+  });
+
+  /* ---------------- SMTP ---------------- */
+  var MS='198.51.100.25';
+  function sl(who,t){return H.line(who==='c'?'SMTP command':'SMTP reply',t+'\r\n',who==='c'?'A text command.':'A three-digit reply code and text.');}
+  LAB.add({
+    id:'smtp',n:'SMTP',name:'SMTP: sending email',kind:'app',hop:1,rto:1000,
+    tagline:'A text conversation that hands a message from your mail client to a server, and from server to server.',
+    why:'SMTP moves email between servers. Your mail program hands the message to your provider\'s server, which looks up the recipient domain\'s MX record in DNS and delivers it to that domain\'s mail server. The conversation is a series of readable commands and numeric replies. Encryption is added with STARTTLS, which upgrades the connection part-way through.',
+    ideas:[['Envelope versus message','MAIL FROM and RCPT TO form the envelope used for delivery. The From and To headers inside the message are separate and can differ.'],['MX records','DNS tells senders which server accepts mail for a domain.'],['STARTTLS','The client asks to upgrade to TLS, then repeats EHLO. If an attacker strips the STARTTLS offer, the connection stays in clear text unless the client insists on TLS.']],
+    facts:[['Ports','25 (server to server), 587 (submission), 465 (TLS)'],['Replies','2xx ok, 3xx continue, 4xx try later, 5xx failure'],['Companion protocols','IMAP and POP3 read mail'],['Lookup','MX record in DNS']],
+    dropNote:'TCP resends the segment.',
+    scenarios:[
+      {id:'send',l:'Send a message',d:'A full delivery, from greeting to QUIT.',
+       actors:[{n:'Mail client',s:'192.168.1.23'},{n:'Mail server',s:'198.51.100.25:25'}],
+       steps:function(){var f=H.tf(MS,25,51720);
+        var msg='From: Ana <ana@example.com>\r\nTo: Bob <bob@example.org>\r\nSubject: Hello\r\nDate: Sun, 08 Nov 2026 11:30:00 -0800\r\n\r\nHi Bob,\r\nThis is a test.\r\n.\r\n';
+        return [
+        N(0,'DNS MX lookup','Find the mail server','Before connecting, the sender asked DNS for the <b>MX record</b> of example.org, which named this server.',{}),
+        S(1,0,'220 greeting','Server greeting','',f.seg('s','PSH,ACK',[sl('s','220 mail.example.org ESMTP ready')])),
+        S(0,1,'EHLO laptop.local','Introduce ourselves','EHLO is the modern "hello" and asks the server to list its extensions.',f.seg('c','PSH,ACK',[sl('c','EHLO laptop.local')])),
+        S(1,0,'250 capabilities','Extensions offered','',f.seg('s','PSH,ACK',[sl('s','250-mail.example.org\r\n250-SIZE 35882577\r\n250-STARTTLS\r\n250 8BITMIME')])),
+        S(0,1,'MAIL FROM','Envelope sender','',f.seg('c','PSH,ACK',[sl('c','MAIL FROM:<ana@example.com>')])),
+        S(1,0,'250 OK','','',f.seg('s','PSH,ACK',[sl('s','250 2.1.0 Ok')])),
+        S(0,1,'RCPT TO','Envelope recipient','',f.seg('c','PSH,ACK',[sl('c','RCPT TO:<bob@example.org>')])),
+        S(1,0,'250 OK','','',f.seg('s','PSH,ACK',[sl('s','250 2.1.5 Ok')])),
+        S(0,1,'DATA','Ready to send the message','',f.seg('c','PSH,ACK',[sl('c','DATA')])),
+        S(1,0,'354 go ahead','','',f.seg('s','PSH,ACK',[sl('s','354 End data with <CR><LF>.<CR><LF>')])),
+        S(0,1,'message + "."','Headers, blank line, body, then a lone dot','The message itself uses its own headers (From, To, Subject). A line with only a dot ends the data.',f.seg('c','PSH,ACK',[H.line('Email message',msg,'RFC 5322 headers, a blank line, and the body.')])),
+        S(1,0,'250 queued','Accepted for delivery','The server now owns responsibility for delivering it.',f.seg('s','PSH,ACK',[sl('s','250 2.0.0 Ok: queued as 4F2A1')])),
+        S(0,1,'QUIT','','',f.seg('c','PSH,ACK',[sl('c','QUIT')])),
+        S(1,0,'221 Bye','','',f.seg('s','PSH,ACK',[sl('s','221 2.0.0 Bye')]))
+       ];}},
+      {id:'tls',l:'STARTTLS upgrade',d:'On port 587 the client upgrades a plain connection to TLS before logging in.',
+       actors:[{n:'Mail client',s:'192.168.1.23'},{n:'Mail server',s:'198.51.100.25:587'}],
+       steps:function(){var f=H.tf(MS,587,51721);return [
+        S(1,0,'220 greeting','Greeting','',f.seg('s','PSH,ACK',[sl('s','220 mail.example.org ESMTP ready')])),
+        S(0,1,'EHLO','','',f.seg('c','PSH,ACK',[sl('c','EHLO laptop.local')])),
+        S(1,0,'250 … STARTTLS','Server offers STARTTLS','A man in the middle could delete this line. A client that does not insist on TLS would carry on in clear text. This is a <b>STARTTLS stripping</b> attack.',f.seg('s','PSH,ACK',[sl('s','250-mail.example.org\r\n250-STARTTLS\r\n250 AUTH PLAIN LOGIN')])),
+        S(0,1,'STARTTLS','Client asks to upgrade','',f.seg('c','PSH,ACK',[sl('c','STARTTLS')])),
+        S(1,0,'220 ready for TLS','Server agrees','',f.seg('s','PSH,ACK',[sl('s','220 2.0.0 Ready to start TLS')])),
+        S(0,1,'TLS ClientHello','The TLS handshake begins on the same connection','From here on the bytes are TLS. The client repeats EHLO inside the encrypted channel and only then logs in.',f.seg('c','PSH,ACK',[H.clientHello(11)]))
+       ];}}
+    ],
+    quiz:[
+      {q:'How does a sending server find the recipient\'s mail server?',o:['An MX record in DNS','ARP','A broadcast','The From header'],a:0,h:'DNS has a record type for mail.',x:'The MX record of the recipient domain lists its mail servers.'},
+      {q:'What does a lone "." on a line mean?',o:['End of the message data','A comment','A new recipient','An error'],a:0,h:'After DATA.',x:'The dot on its own line ends the DATA section.'},
+      {q:'What is a STARTTLS stripping attack?',o:['Removing the STARTTLS offer so the session stays unencrypted','Breaking TLS ciphers','Stealing a certificate','A DNS attack'],a:0,h:'The upgrade is optional unless enforced.',x:'An attacker deletes the 250 STARTTLS line so a lenient client never upgrades.'}
+    ]
+  });
+
+  /* ---------------- POP3 ---------------- */
+  function ml(who,t,nm){return H.line(nm,t+'\r\n','A line of text.');}
+  LAB.add({
+    id:'pop3',n:'POP3',name:'POP3: download mail and (usually) delete it',kind:'app',hop:1,rto:1000,
+    tagline:'The simple way to fetch mail: log in, list, retrieve, delete.',
+    why:'POP3 was designed for a single computer that dials in, downloads the mailbox and hangs up. Messages are typically removed from the server after download, which suits one device but not several. It is simple, readable text, and a good contrast to IMAP.',
+    ideas:[['Three states','Authorization (USER/PASS), Transaction (STAT, LIST, RETR, DELE), then Update when you QUIT, which is when deletions really happen.'],['One device','Mail leaves the server, so other devices cannot see it unless you ask the server to keep copies.'],['Plain text','Without TLS (port 995) the password is readable.']],
+    facts:[['Ports','TCP 110, 995 with TLS'],['Replies','+OK or -ERR'],['State','Minimal, nothing tracked after QUIT'],['Compare','IMAP keeps mail on the server']],
+    dropNote:'TCP resends the segment.',
+    scenarios:[{id:'get',l:'Fetch a message',d:'Log in, check the mailbox, download and delete one message.',
+      actors:[{n:'Mail client',s:'192.168.1.23'},{n:'POP3 server',s:'198.51.100.110'}],
+      steps:function(){var f=H.tf('198.51.100.110',110,51730),c=function(t){return ml('c',t,'POP3 command');},r=function(t){return ml('s',t,'POP3 reply');};
+        var body='From: Bob <bob@example.org>\r\nSubject: Lunch?\r\n\r\nShall we meet at noon?\r\n.';
+        return [
+        S(1,0,'+OK ready','Greeting','',f.seg('s','PSH,ACK',[r('+OK POP3 server ready')])),
+        S(0,1,'USER ana','','',f.seg('c','PSH,ACK',[c('USER ana')])),
+        S(1,0,'+OK','','',f.seg('s','PSH,ACK',[r('+OK')])),
+        S(0,1,'PASS hunter2','Password in the clear','',f.seg('c','PSH,ACK',[c('PASS hunter2')])),
+        S(1,0,'+OK 2 messages','Logged in','',f.seg('s','PSH,ACK',[r('+OK 2 messages')])),
+        S(0,1,'STAT','How many messages?','',f.seg('c','PSH,ACK',[c('STAT')])),
+        S(1,0,'+OK 2 3456','Count and total size','',f.seg('s','PSH,ACK',[r('+OK 2 3456')])),
+        S(0,1,'RETR 1','Download message 1','',f.seg('c','PSH,ACK',[c('RETR 1')])),
+        S(1,0,'+OK message follows','The message','The server sends the entire message, ending with a line containing a single dot.',f.seg('s','PSH,ACK',[r('+OK 52 octets\r\n'+body)])),
+        S(0,1,'DELE 1','Mark for deletion','',f.seg('c','PSH,ACK',[c('DELE 1')])),
+        S(1,0,'+OK marked','','The message is only marked. It is removed when the session ends cleanly with QUIT.',f.seg('s','PSH,ACK',[r('+OK message 1 deleted')])),
+        S(0,1,'QUIT','End the session','',f.seg('c','PSH,ACK',[c('QUIT')])),
+        S(1,0,'+OK bye','Deletions applied','',f.seg('s','PSH,ACK',[r('+OK bye')]))
+      ];}}],
+    quiz:[
+      {q:'When does POP3 actually delete a message?',o:['As soon as DELE is sent','When the session ends with QUIT','Never','After RETR'],a:1,h:'Update state.',x:'DELE only marks messages. They are removed in the Update state after QUIT.'},
+      {q:'Why is POP3 awkward with several devices?',o:['It is encrypted','Mail is normally removed from the server after download','It uses UDP','It cannot log in'],a:1,h:'One computer was assumed.',x:'Once downloaded and deleted, other devices cannot see the message.'},
+      {q:'What do POP3 success replies start with?',o:['250','+OK','OK','200'],a:1,h:'Not numeric.',x:'POP3 uses +OK and -ERR.'}
+    ]
+  });
+
+  /* ---------------- IMAP ---------------- */
+  LAB.add({
+    id:'imap',n:'IMAP',name:'IMAP: mail that stays on the server',kind:'app',hop:1,rto:1000,
+    tagline:'Folders, flags and live updates, so every device sees the same mailbox.',
+    why:'IMAP keeps messages on the server and lets many devices work on the same mailbox. Clients fetch only what they need, such as headers first, and flags such as read or deleted are shared. Commands carry a tag, so replies can be matched even when several are in flight. IDLE lets the server push a notification the moment mail arrives.',
+    ideas:[['Tags','Each client command starts with a tag (a001, a002). The final reply with the same tag ends it. Lines starting with * are untagged server data.'],['Fetch only what you need','Header first, body and attachments on demand: good for slow links.'],['IDLE = push','The client keeps a connection open and the server announces new mail instantly.']],
+    facts:[['Ports','TCP 143, 993 with TLS'],['State','Folders and flags live on the server'],['Compare','POP3 downloads and removes'],['Extensions','IDLE, CONDSTORE, QRESYNC']],
+    dropNote:'TCP resends the segment.',
+    scenarios:[{id:'sess',l:'Read and wait for mail',d:'Log in, open the inbox, fetch a header, then wait for a push notification.',
+      actors:[{n:'Mail client',s:'192.168.1.23'},{n:'IMAP server',s:'198.51.100.143'}],
+      steps:function(){var f=H.tf('198.51.100.143',143,51731),c=function(t){return ml('c',t,'IMAP command');},r=function(t){return ml('s',t,'IMAP reply');};return [
+        S(1,0,'* OK ready','Greeting','Lines beginning with * are untagged: the server speaking on its own.',f.seg('s','PSH,ACK',[r('* OK IMAP4rev1 ready')])),
+        S(0,1,'a001 LOGIN','Log in','The tag a001 identifies this command.',f.seg('c','PSH,ACK',[c('a001 LOGIN ana hunter2')])),
+        S(1,0,'a001 OK','','The same tag in the reply completes the command.',f.seg('s','PSH,ACK',[r('a001 OK LOGIN completed')])),
+        S(0,1,'a002 SELECT INBOX','Open the inbox','',f.seg('c','PSH,ACK',[c('a002 SELECT INBOX')])),
+        S(1,0,'* 3 EXISTS, a002 OK','Mailbox status','',f.seg('s','PSH,ACK',[r('* 3 EXISTS\r\n* 0 RECENT\r\na002 OK [READ-WRITE] SELECT completed')])),
+        S(0,1,'a003 FETCH 3 headers','Fetch only the headers of message 3','The body and attachments are not downloaded.',f.seg('c','PSH,ACK',[c('a003 FETCH 3 (BODY[HEADER.FIELDS (FROM SUBJECT)])')])),
+        S(1,0,'headers + a003 OK','','',f.seg('s','PSH,ACK',[r('* 3 FETCH (BODY[HEADER.FIELDS (FROM SUBJECT)] {44}\r\nFrom: bob@example.org\r\nSubject: Lunch?\r\n\r\n)\r\na003 OK FETCH completed')])),
+        S(0,1,'a004 IDLE','Wait for new mail','The client parks the connection and asks to be told about changes.',f.seg('c','PSH,ACK',[c('a004 IDLE')])),
+        S(1,0,'+ idling','','',f.seg('s','PSH,ACK',[r('+ idling')])),
+        S(1,0,'* 4 EXISTS','New mail: pushed instantly','A message arrived. The server announces it with no polling. Your phone buzzes within seconds.',f.seg('s','PSH,ACK',[r('* 4 EXISTS')]),{hop:1})
+      ];}}],
+    quiz:[
+      {q:'What is the purpose of the tag at the start of an IMAP command?',o:['Encryption','Matching a reply to its command','Choosing the folder','Counting messages'],a:1,h:'Several commands can be pending.',x:'The server repeats the tag in the final response of that command.'},
+      {q:'How does IMAP get new mail instantly?',o:['Polling every second','IDLE: the server pushes updates','UDP broadcast','DNS'],a:1,h:'A command that waits.',x:'IDLE holds the connection open and the server sends untagged notifications.'},
+      {q:'What is the main advantage over POP3?',o:['It is smaller','Mail and flags stay on the server and sync across devices','It is faster to type','No login'],a:1,h:'Think of phone plus laptop.',x:'The server is the single source of truth.'}
+    ]
+  });
+})();
+/* ===== More labs, part 2: SMB, Modbus, WebRTC, DoH, DNSSEC, SOCKS5 ===== */
+(function(){
+  var S=H.S,N=H.N;
+
+  /* ---------------- SMB ---------------- */
+  var FSRV='192.168.1.50',FE=[H.lapMac,'00:11:32:5a:9c:01'];
+  var CMD={0:'NEGOTIATE',1:'SESSION_SETUP',3:'TREE_CONNECT',5:'CREATE',6:'CLOSE',8:'READ'};
+  function smb(cmd,resp,mid,tid,sid,status,body,stxt){
+    var fl=resp?1:0,hdr=[
+      PK.fraw('ProtocolId',[0xfe,0x53,0x4d,0x42],'The marker 0xFE "SMB" that begins every SMB2 message.','0xFE "SMB"'),
+      PK.f16('StructureSize',64,'Always 64: the size of this header.'),
+      PK.f16('CreditCharge',1,'How many credits (units of allowed outstanding work) this message uses.'),
+      PK.f32('Status',status||0,'Result code in a response. 0 is success.',stxt||(status?PK.hex(status,8):'0 (STATUS_SUCCESS)')),
+      PK.f16('Command',cmd,'The operation.',cmd+' ('+CMD[cmd]+')'),
+      PK.f16('Credits',32,'Credits requested or granted: SMB\'s flow control.'),
+      PK.f32('Flags',fl,'Bit 0 marks a response.',resp?'response':'request'),
+      PK.f32('NextCommand',0,'Offset of the next command when several are chained. 0 means none.'),
+      PK.fraw('MessageId',PK.cat(PK.u32(0),PK.u32(mid)),'A counter that matches responses to requests.',String(mid)),
+      PK.f32('Reserved',0,'Process ID, unused.'),
+      PK.f32('TreeId',tid,'Which connected share this message refers to.',tid?PK.hex(tid,8):'0 (none yet)'),
+      PK.fraw('SessionId',PK.cat(PK.u32(0),PK.u32(sid)),'Which authenticated session this belongs to.',sid?PK.hex(sid,8):'0 (none yet)'),
+      PK.fraw('Signature',PK.rnd(16,cmd*3+mid),'A cryptographic signature that proves the message was not altered.','16 bytes')
+    ];
+    var h=PK.L('SMB2 header','app',hdr),b=PK.L('SMB2 '+CMD[cmd]+(resp?' response':' request'),'app',body);
+    var len=H.blen(h)+H.blen(b);
+    return [PK.L('Direct TCP header','app',[PK.F('NetBIOS length',[0].concat(PK.u24(len)),len+' bytes','A 4-byte prefix giving the SMB message length: a zero byte then 3 bytes of size.')]),h,b];
+  }
+  LAB.add({
+    id:'smb',n:'SMB',name:'SMB: Windows file sharing',kind:'app',hop:'lan',lan:true,rto:1000,
+    tagline:'How a computer opens a folder on a file server and reads a file from it.',
+    why:'SMB lets a computer treat a folder on another machine like a local one. A client negotiates a dialect, authenticates, connects to a named share (a "tree") and then opens, reads, writes and closes files with compact binary commands. It is the protocol behind Windows file sharing, NAS devices and network printers, and it must never be exposed directly to the internet.',
+    ideas:[['Session, tree, file','Authenticate once (session), connect to a share (tree), then open files. Each level has its own ID in the header.'],['Credits','The server grants credits that cap how many requests the client may have in flight.'],['Signing and encryption','Modern SMB can sign messages to detect tampering and encrypt them end to end.']],
+    facts:[['Port','TCP 445'],['Versions','SMB 2.1, 3.0, 3.1.1 (SMB1 is obsolete and unsafe)'],['Auth','Kerberos or NTLM'],['Never expose','Port 445 to the internet']],
+    dropNote:'TCP resends the segment.',
+    scenarios:[
+      {id:'open',l:'Open and read a file',d:'Negotiate, authenticate, connect to a share, open a file and read it.',
+       actors:[{n:'Laptop',s:'192.168.1.23'},{n:'File server',s:'192.168.1.50:445'}],
+       steps:function(){var f=H.est(H.flow(H.lap,51740,FSRV,445,{ethOut:FE,ethIn:[FE[1],FE[0]]})),T=0x1,SID=0x4000000000a1;
+        function z(n,d){return PK.fraw('Reserved',PK.fill(n,0),d||'Fields not shown in detail.',n+' bytes');}
+        var SD=0x00000a1;
+        return [
+        S(0,1,'NEGOTIATE','Which dialects do you speak?','The client lists the SMB versions it supports. Everything after the 64-byte header is a small, fixed structure of binary fields.',f.seg('c','PSH,ACK',smb(0,false,0,0,0,0,[PK.f16('StructureSize',36,'Size of this request structure.'),PK.f16('DialectCount',3,'How many dialects follow.'),PK.f16('Dialect 1',0x0210,'SMB 2.1','0x0210 (2.1)'),PK.f16('Dialect 2',0x0300,'SMB 3.0','0x0300 (3.0)'),PK.f16('Dialect 3',0x0311,'SMB 3.1.1, the newest.','0x0311 (3.1.1)')]))),
+        S(1,0,'NEGOTIATE response','Server picks SMB 3.1.1','',f.seg('s','PSH,ACK',smb(0,true,0,0,0,0,[PK.f16('StructureSize',65,'Size of the response structure.'),PK.f16('Security mode',1,'Signing enabled.'),PK.f16('Dialect',0x0311,'The chosen dialect.','0x0311 (3.1.1)'),PK.f32('Max read size',8388608,'Largest read the server accepts.','8 MB')]))),
+        S(0,1,'SESSION_SETUP','Authenticate','Kerberos or NTLM tokens ride in this message (often two round trips). The password never crosses the wire: a challenge-response proves knowledge of it.',f.seg('c','PSH,ACK',smb(1,false,1,0,0,0,[PK.f16('StructureSize',25,'Request size.'),PK.fraw('Security blob',PK.rnd(120,71),'An opaque Kerberos or NTLM authentication token.','120 bytes')]))),
+        S(1,0,'SESSION_SETUP response','Session established','The response header now carries a <b>SessionId</b>, used in every message after this.',f.seg('s','PSH,ACK',smb(1,true,1,0,SD,0,[PK.f16('StructureSize',9,'Response size.'),PK.fraw('Security blob',PK.rnd(40,72),'Final authentication token.','40 bytes')]))),
+        S(0,1,'TREE_CONNECT \\\\fs\\docs','Connect to a share','The path names the share. The server will answer with a <b>TreeId</b>.',f.seg('c','PSH,ACK',smb(3,false,2,0,SD,0,[PK.f16('StructureSize',9,'Request size.'),PK.fstr('Path','\\\\fs\\docs','The share to connect to.')]))),
+        S(1,0,'TREE_CONNECT response','Share connected','',f.seg('s','PSH,ACK',smb(3,true,2,T,SD,0,[PK.f16('StructureSize',16,'Response size.'),PK.f8('Share type',1,'A disk share.','1 (disk)')]))),
+        S(0,1,'CREATE report.txt','Open the file','"Create" also means "open". The server checks permissions here.',f.seg('c','PSH,ACK',smb(5,false,3,T,SD,0,[PK.f16('StructureSize',57,'Request size.'),PK.fstr('File name','report.txt','The file to open.'),PK.f32('Desired access',0x120089,'Read rights requested.')]))),
+        S(1,0,'CREATE response (file ID)','File opened','The server returns a <b>file ID</b> to use in later commands.',f.seg('s','PSH,ACK',smb(5,true,3,T,SD,0,[PK.f16('StructureSize',89,'Response size.'),PK.fraw('File ID',PK.rnd(16,73),'A handle for the open file.','16 bytes'),PK.f32('End of file',1234,'File size in bytes.','1,234 bytes')]))),
+        S(0,1,'READ 1,234 bytes','Read the file','',f.seg('c','PSH,ACK',smb(8,false,4,T,SD,0,[PK.f16('StructureSize',49,'Request size.'),PK.f32('Length',1234,'How many bytes to read.'),PK.fraw('Offset',PK.fill(8,0),'Start of the file.','0'),PK.fraw('File ID',PK.rnd(16,73),'The handle from CREATE.','16 bytes')]))),
+        S(1,0,'READ response + data','File contents','The data follows the header.',f.seg('s','PSH,ACK',smb(8,true,4,T,SD,0,[PK.f16('StructureSize',17,'Response size.'),PK.f32('Data length',300,'Bytes returned.'),PK.fraw('Data',PK.rnd(300,74),'The file bytes (shortened here).','300 bytes')])))
+       ];}},
+      {id:'deny',l:'Access denied',d:'The user may connect to the share but not open a protected file.',
+       actors:[{n:'Laptop',s:'192.168.1.23'},{n:'File server',s:'192.168.1.50:445'}],
+       steps:function(){var f=H.est(H.flow(H.lap,51741,FSRV,445,{ethOut:FE,ethIn:[FE[1],FE[0]]}));return [
+        S(0,1,'CREATE salaries.xlsx','Try to open a protected file','The session and share are already set up.',f.seg('c','PSH,ACK',smb(5,false,3,1,0xa1,0,[PK.f16('StructureSize',57,'Request size.'),PK.fstr('File name','salaries.xlsx','The file to open.'),PK.f32('Desired access',0x120089,'Read rights requested.')]))),
+        S(1,0,'STATUS_ACCESS_DENIED','The server refuses','Status <b>0xC0000022</b> in the header. Permission is checked on every open, against the file\'s access control list.',f.seg('s','PSH,ACK',smb(5,true,3,1,0xa1,0xc0000022,[PK.f16('StructureSize',9,'Error response size.'),PK.f8('Error context count',0,'None.')],'0xC0000022 (STATUS_ACCESS_DENIED)')))
+       ];}}
+    ],
+    quiz:[
+      {q:'Which TCP port does SMB use?',o:['22','80','445','3389'],a:2,h:'Never exposed to the internet.',x:'SMB uses TCP 445.'},
+      {q:'What do the SessionId and TreeId identify?',o:['The authenticated user session and the connected share','The IP and port','The file name','The TLS key'],a:0,h:'Look at the header.',x:'SessionId is the logged-in session, TreeId the share connected within it.'},
+      {q:'Why is exposing SMB to the internet dangerous?',o:['It is slow','It has been a frequent target of worms and ransomware','It uses UDP','It needs DNS'],a:1,h:'Think of WannaCry.',x:'Vulnerable SMB services have been exploited at scale. Keep it on trusted networks or behind a VPN.'}
+    ]
+  });
+
+  /* ---------------- Modbus ---------------- */
+  var PLC='192.168.1.60',PE=[H.lapMac,'00:80:f4:03:11:22'];
+  function mb(tx,fc,pdu,name,desc,exc){
+    return [PK.L('Modbus/TCP','app',[PK.f16('Transaction ID',tx,'Matches a response to its request.'),PK.f16('Protocol ID',0,'Always 0 for Modbus.'),PK.f16('Length',H.sum(pdu)+1,'Bytes that follow: the unit ID plus the PDU.',(H.sum(pdu)+1)+' bytes'),PK.f8('Unit ID',1,'Which device behind a gateway.')].concat([PK.F('Function code',[fc],fc+' ('+name+')',desc)],pdu))];
+  }
+  LAB.add({
+    id:'modbus',n:'Modbus',name:'Modbus/TCP: talking to industrial machines',kind:'app',hop:'lan',lan:true,rto:1000,
+    tagline:'A tiny, 1979-era protocol that still reads sensors and switches valves in factories.',
+    why:'Modbus lets a controller or screen read and write numbered registers and coils in a programmable logic controller (PLC). Request and reply are only a handful of bytes. It has no login and no encryption: anyone who can reach port 502 can read values and change set-points, which is why industrial networks must be isolated.',
+    ideas:[['Registers and coils','Data is a flat table of 16-bit registers and single-bit coils at numbered addresses. What each means is documented by the device maker.'],['Function codes','3 reads holding registers, 6 writes one, 16 writes many. A request with the top bit set in the reply is an error.'],['No security','No authentication and no encryption. Isolation and firewalls are the defence. Modbus/TCP Security wraps it in TLS.']],
+    facts:[['Port','TCP 502'],['Typical use','PLCs, meters, sensors'],['Frame','7-byte MBAP header + PDU'],['Security','None built in']],
+    dropNote:'TCP resends the segment. A control loop may miss a cycle.',
+    scenarios:[
+      {id:'rw',l:'Read and write',d:'A control screen reads a temperature and changes a set-point.',
+       actors:[{n:'Control screen',s:'192.168.1.23'},{n:'PLC',s:'192.168.1.60:502'}],
+       steps:function(){var f=H.est(H.flow(H.lap,51750,PLC,502,{ethOut:PE,ethIn:[PE[1],PE[0]]}));return [
+        S(0,1,'Read holding regs 0 to 1','Read two registers starting at address 0','Function code <b>3</b>. The PDU is just a start address and a count.',f.seg('c','PSH,ACK',mb(1,3,[PK.f16('Start address',0,'First register.'),PK.f16('Quantity',2,'Number of registers.')],'Read Holding Registers','Read one or more 16-bit registers.'))),
+        S(1,0,'registers: 215, 800','The PLC answers','Two values: 215 (read as 21.5 °C if the device scales by 10) and 800.',f.seg('s','PSH,ACK',mb(1,3,[PK.f8('Byte count',4,'Bytes of register data.'),PK.f16('Register 0',215,'Temperature × 10.','215 (21.5 °C)'),PK.f16('Register 1',800,'Set-point × 10.','800 (80.0 °C)')],'Read Holding Registers','The answer repeats the function code.'))),
+        S(0,1,'Write register 1 = 600','Change the set-point','Function <b>6</b> writes one register. There is no login or confirmation. Whoever can reach the port can do this.',f.seg('c','PSH,ACK',mb(2,6,[PK.f16('Register address',1,'Which register.'),PK.f16('Value',600,'New value.','600 (60.0 °C)')],'Write Single Register','Write one 16-bit register.'))),
+        S(1,0,'echo: value 600','PLC confirms by echoing','The reply simply repeats the address and value.',f.seg('s','PSH,ACK',mb(2,6,[PK.f16('Register address',1,'Which register.'),PK.f16('Value',600,'Value now stored.','600 (60.0 °C)')],'Write Single Register','Echo of the request.')))
+       ];}},
+      {id:'exc',l:'Exception',d:'Reading a register that does not exist.',
+       actors:[{n:'Control screen',s:'192.168.1.23'},{n:'PLC',s:'192.168.1.60:502'}],
+       steps:function(){var f=H.est(H.flow(H.lap,51751,PLC,502,{ethOut:PE,ethIn:[PE[1],PE[0]]}));return [
+        S(0,1,'Read holding reg 9999','Ask for an address that is not there','',f.seg('c','PSH,ACK',mb(1,3,[PK.f16('Start address',9999,'First register.'),PK.f16('Quantity',1,'Number of registers.')],'Read Holding Registers','Read registers.'))),
+        S(1,0,'exception 2','Error: illegal data address','The function code comes back with the <b>top bit set</b> (0x83 = 0x80 + 3), followed by an exception code: <b>2</b> means illegal data address.',f.seg('s','PSH,ACK',mb(1,0x83,[PK.f8('Exception code',2,'2 means the address is not valid.','2 (illegal data address)')],'Read Holding Registers, error','The top bit marks an error response.')))
+       ];}}
+    ],
+    quiz:[
+      {q:'How does a Modbus reply show an error?',o:['A 5xx status','The function code has its top bit set','A TCP RST','A UDP message'],a:1,h:'0x83 versus 0x03.',x:'The response function code is the request code plus 0x80, followed by an exception code.'},
+      {q:'What stops a stranger changing a Modbus set-point?',o:['A password','Nothing in the protocol; network isolation and firewalls','TLS','The checksum'],a:1,h:'Modbus has no login.',x:'There is no authentication, so the network itself must be protected.'},
+      {q:'Which TCP port does Modbus/TCP use?',o:['22','443','502','1883'],a:2,h:'Remember the 5-0-2.',x:'Port 502.'}
+    ]
+  });
+
+  /* ---------------- WebRTC ---------------- */
+  var STUN='74.125.250.129';
+  function stun(type,tid,attrs){
+    var al=H.sum(attrs);
+    return PK.L('STUN','app',[PK.f16('Message type',type,type===1?'Binding request: "what address do you see me at?"':'Binding success response.',type===1?'0x0001 (Binding request)':'0x0101 (Binding response)'),PK.f16('Message length',al,'Bytes of attributes.',al+' bytes'),PK.f32('Magic cookie',0x2112a442,'A fixed value that identifies STUN.','0x2112a442'),PK.fraw('Transaction ID',tid,'Random 96-bit ID that matches a response to its request.','12 bytes')].concat(attrs));
+  }
+  function rtp(seq,ts,len,sd){
+    return PK.L('SRTP (encrypted RTP)','sec',[PK.F('V, P, X, CC',[0x80],'version 2','Version 2, no padding, no extension, no contributing sources.'),PK.F('M, PT',[0x6f],'payload type 111 (Opus)','Payload type 111 was negotiated for the Opus audio codec.'),PK.f16('Sequence number',seq,'Counts up by one per packet, so the receiver can order packets and detect loss.'),PK.f32('Timestamp',ts,'Sampling clock. Opus uses 48,000 ticks per second, so 20 ms = 960 ticks.',ts),PK.f32('SSRC',0x1b2c3d4e,'Identifies this media stream.',PK.hex(0x1b2c3d4e,8)),H.enc('Encrypted payload',len,sd,'The audio frame, encrypted with SRTP keys derived from the DTLS handshake.','encrypted audio'),PK.fraw('Authentication tag',PK.rnd(10,sd+1),'Detects tampering.','10 bytes')]);
+  }
+  LAB.add({
+    id:'webrtc',n:'WebRTC',name:'WebRTC: video and voice between browsers',kind:'app',hop:1,rto:1000,
+    tagline:'Real-time media sent peer to peer, after a dance of signalling, address discovery and key exchange.',
+    why:'To call someone directly, two browsers must learn each other\'s addresses (both are usually behind NAT), agree on codecs, and set up encryption. A website relays the offer and answer (signalling, often over WebSocket). STUN servers tell each browser its public address, ICE tries candidate address pairs until one works, DTLS exchanges keys, and the media flows as encrypted RTP packets over UDP. If no direct path exists, a TURN server relays the media.',
+    ideas:[['Signalling is separate','WebRTC defines no signalling. Apps use WebSocket or HTTP to pass the SDP offer and answer.'],['ICE and STUN','ICE tests pairs of candidate addresses. A STUN server tells you your public address as it looks from outside.'],['Media over UDP','Late audio is useless, so RTP rides on UDP with sequence numbers and timestamps, and a lost packet is concealed instead of waited for.'],['Always encrypted','DTLS makes the keys, SRTP encrypts the media. TURN servers relay but cannot read it.']],
+    facts:[['Transport','UDP (TCP and TURN as fallbacks)'],['Key exchange','DTLS-SRTP'],['Audio','Opus'],['Video','VP8, VP9, H.264, AV1']],
+    dropMode:'stop',dropNote:'Media packets are not retransmitted: the audio codec hides the gap. Handshake packets are retried by STUN and DTLS timers.',
+    scenarios:[
+      {id:'setup',l:'Connection setup',d:'From a signalling offer to encrypted media between two browsers.',
+       actors:[{n:'Browser A',s:'192.168.1.23'},{n:'STUN server',s:'74.125.250.129'},{n:'Browser B',s:'198.51.100.200'}],
+       steps:function(){
+        var tid=PK.rnd(12,9),px=62001^0x2112,ip=[203,0,113,45].map(function(x,i){return x^[0x21,0x12,0xa4,0x42][i];});
+        var req=H.udp('out',STUN,54000,3478,[stun(1,tid,[])],{id:0x4001});
+        var resp=H.udp('in',STUN,3478,54000,[stun(0x101,tid,[PK.fraw('XOR-MAPPED-ADDRESS',PK.cat([0,0x20,0,8,0,1],PK.u16(px),ip),'The public address the server saw, XORed with the magic cookie so NATs that rewrite addresses in payloads cannot corrupt it. Decoded: 203.0.113.45:62001.','203.0.113.45:62001')])],{id:0x4002,ttl:56});
+        var chk=function(t,t2){return stun(t,PK.rnd(12,11),[PK.fraw('USERNAME',PK.cat([0,6,0,9],PK.strb('b8Kx:a1Zq'),[0,0,0]),'Names the ICE session so the peer knows the check is for this call.','b8Kx:a1Zq'),PK.fraw('PRIORITY',PK.cat([0,0x24,0,4],PK.u32(1845501695)),'How much the sender prefers this candidate pair.','1845501695')].concat(t2?[PK.fraw('XOR-MAPPED-ADDRESS',PK.cat([0,0x20,0,8,0,1],PK.u16(62001^0x2112),ip),'Our public address as the peer sees it.','203.0.113.45:62001')]:[]));};
+        var dtls=PK.L('DTLS record: ClientHello','sec',[PK.f8('Content type',22,'Handshake.','22 (handshake)'),PK.f16('Version',0xfefd,'DTLS 1.2.','0xfefd (DTLS 1.2)'),PK.fraw('Epoch + sequence',PK.fill(8,0),'Record counter. DTLS adds these because UDP can reorder packets.','epoch 0, seq 0'),PK.f16('Length',120,'Record length.'),PK.fraw('Handshake (ClientHello, use_srtp)',PK.rnd(120,13),'The DTLS ClientHello, including the use_srtp extension that offers SRTP profiles and a fingerprint of the certificate pledged in the signalling.','120 bytes')]);
+        return [
+        N(0,'signalling: SDP offer/answer','Signalling happens out of band','Through the website (usually a WebSocket) the two browsers exchange an <b>SDP</b> description: codecs, ICE credentials and a <b>certificate fingerprint</b>. That fingerprint is what later lets DTLS detect a man in the middle.',{st:{0:'offer sent'}}),
+        S(0,1,'STUN Binding request','What is my public address?','The laptop is behind NAT. It asks a STUN server how its traffic looks from outside. The request is just a 20-byte header.',req,{hop:0.5}),
+        S(1,0,'XOR-MAPPED-ADDRESS','The server reports 203.0.113.45:62001','This <b>server-reflexive candidate</b> is the address the other browser can try. (The address is XORed with the magic cookie in the packet.)',resp,{hop:0.5,st:{0:'candidates found'}}),
+        S(0,2,'ICE check','Connectivity check, straight to the peer','Both browsers send checks to each other\'s candidate addresses at the same time. The outgoing packets make holes in their NATs so the other side\'s packets can come in.',H.udp('out','198.51.100.200',54000,49152,[chk(1,false)],{id:0x4003}),{hop:1}),
+        S(2,0,'ICE success','Peer answers','A success response means this address pair works. The browsers pick it and no relay is needed. (If NATs block direct paths, a TURN server relays everything.)',H.udp('in','198.51.100.200',49152,54000,[chk(0x101,true)],{id:0x4004,ttl:52}),{hop:1,st:{0:'path found',2:'path found'}}),
+        S(0,2,'DTLS ClientHello','Keys are negotiated over the same path','A DTLS handshake (TLS over UDP) runs between the browsers. Its certificate is checked against the fingerprint from signalling, and the keys it creates are used for SRTP.',H.udp('out','198.51.100.200',54000,49152,[dtls],{id:0x4005}),{hop:1}),
+        S(0,2,'SRTP audio packet','Media begins','A 20 ms Opus frame. Look at the RTP fields: sequence number, timestamp (+960 per frame) and SSRC. The payload is encrypted and authenticated.',H.udp('out','198.51.100.200',54000,49152,[rtp(1000,160000,80,21)],{id:0x4006}),{hop:1,st:{0:'call in progress',2:'call in progress'}}),
+        S(2,0,'SRTP audio packet','And the reply direction','Media flows both ways at the same time, 50 packets per second per stream.',H.udp('in','198.51.100.200',49152,54000,[rtp(2000,320000,80,22)],{id:0x4007,ttl:52}),{hop:1})
+       ];}},
+      {id:'loss',l:'Lost audio packet',d:'A packet disappears. The receiver notices a gap in the sequence numbers and the codec conceals it.',
+       actors:[{n:'Browser A',s:'192.168.1.23'},{n:'Browser B',s:'198.51.100.200'}],
+       steps:function(){var m=function(i,lost){return S(0,1,'RTP seq '+(1000+i),'Packet '+(i+1)+' of the stream','Sequence '+(1000+i)+', timestamp '+(160000+960*i)+'. Each packet carries 20 ms of sound.',H.udp('out','198.51.100.200',54000,49152,[rtp(1000+i,160000+960*i,80,30+i)],{id:0x4100+i}),{hop:1,lost:lost,lostText:lost?'The network drops it. Nothing resends audio, because by the time a retransmission arrived the moment would have passed.':undefined});};
+        return [m(0),m(1,true),m(2),N(1,'gap: 1001 missing','Receiver spots the gap','The jitter buffer sees sequence 1000 then 1002. It asks the Opus decoder to <b>conceal</b> 20 ms (packet loss concealment), which is barely audible. For video, the receiver can ask for a retransmission or a fresh keyframe (NACK or PLI) instead.',{}),m(3)];}}
+    ],
+    quiz:[
+      {q:'What does a STUN server tell a browser?',o:['The remote user\'s name','Its public IP address and port as seen from outside','A TLS certificate','A codec'],a:1,h:'Think of NAT.',x:'It reflects the source address of the request back, revealing the NAT-mapped public address.'},
+      {q:'Why do real-time media packets not use TCP?',o:['TCP cannot carry audio','Late data is useless, so waiting for retransmission would hurt','TCP is encrypted','UDP is more reliable'],a:1,h:'A late word in a call is worthless.',x:'UDP avoids head-of-line delay, and the codec hides rare losses.'},
+      {q:'When is a TURN server used?',o:['Always','When no direct peer-to-peer path can be established','To store recordings','For DNS'],a:1,h:'Strict NATs and firewalls.',x:'TURN relays media between peers when ICE finds no direct path.'}
+    ]
+  });
+
+  /* ---------------- DNS over HTTPS ---------------- */
+  var DR='1.1.1.1';
+  LAB.add({
+    id:'doh',n:'DoH',name:'DNS over HTTPS: private lookups',kind:'sec',hop:0.3,rto:1000,
+    tagline:'The same DNS question, sent inside an encrypted HTTPS connection so the network cannot read it.',
+    why:'Classic DNS is unencrypted. Your Wi-Fi network, your ISP and anyone on the path can see every name you look up, and can alter the answers. DNS over HTTPS (DoH) wraps the identical DNS message in an HTTPS request to a resolver, so lookups look like ordinary web traffic. DNS over TLS (DoT, port 853) does the same on a dedicated port.',
+    ideas:[['Same message, new envelope','The DNS wire format is unchanged. It is sent as the body of an HTTP request (content type application/dns-message).'],['Hides from the network, not from the resolver','Observers cannot read the query, but the resolver you chose still sees every name. Choose one you trust.'],['Harder to block or filter','It shares port 443 with web traffic, which is both a privacy gain and a challenge for networks that filter by DNS.']],
+    facts:[['Transport','HTTPS, TCP 443'],['Content type','application/dns-message'],['Alternative','DoT on TCP 853, DoQ on UDP 853'],['Resolvers','Cloudflare, Google, Quad9']],
+    dropNote:'TCP resends the segment. The lookup is just delayed.',
+    scenarios:[
+      {id:'q',l:'A DoH lookup',d:'A DNS query inside an HTTPS request (shown decrypted).',
+       actors:[{n:'Laptop',s:'192.168.1.23'},{n:'DoH resolver',s:'1.1.1.1:443'}],
+       steps:function(){var f=H.est(H.flow(H.lap,51760,DR,443)),q=H.dns({id:0,q:['example.com','A'],rd:true}),A={name:'example.com',type:'A',ttl:3600,data:H.web},a=H.dns({id:0,q:['example.com','A'],resp:true,rd:true,ra:true,an:[A]});
+        var rq=PK.textLayer('HTTP request (decrypted)','app','POST /dns-query HTTP/1.1',[['Host','cloudflare-dns.com'],['Content-Type','application/dns-message'],['Accept','application/dns-message'],['Content-Length',String(H.blen(q))]],null,{startName:'Request line',start:'The DNS message is the POST body. (Real traffic is HTTP/2, shown here as HTTP/1.1 text for readability.)'});
+        var rs=PK.textLayer('HTTP response (decrypted)','app','HTTP/1.1 200 OK',[['Content-Type','application/dns-message'],['Cache-Control','max-age=3600'],['Content-Length',String(H.blen(a))]],null,{startName:'Status line',start:'The body is a standard DNS response.'});
+        var m={banner:'<b>Decrypted view.</b> On the wire these bytes are inside TLS records (see the TLS lab), so observers see only encrypted data. Transaction ID is 0 in DoH so the response can be cached.'};
+        return [
+        S(0,1,'POST /dns-query','Query in an HTTPS request','The DNS message is identical to a normal query. DoH sets the transaction ID to 0 so identical queries can share cached HTTP responses.',f.seg('c','PSH,ACK',[rq,q],{meta:m})),
+        S(1,0,'200 OK + DNS answer','Answer in the HTTP response','The body is a regular DNS response with the A record and its TTL.',f.seg('s','PSH,ACK',[rs,a],{meta:m}))
+       ];}},
+      {id:'cmp',l:'Plain DNS vs DoH',d:'What someone watching the network sees in each case.',
+       actors:[{n:'Laptop',s:'192.168.1.23'},{n:'Resolver',s:'1.1.1.1'}],
+       steps:function(){var f=H.est(H.flow(H.lap,51761,DR,443)),q=H.dns({id:0xa1b2,q:['secret-clinic.example','A'],rd:true});
+        return [
+        S(0,1,'plain DNS query','Classic DNS: readable','Look in the ASCII column of the inspector: <b>secret-clinic.example</b> is right there. Your ISP, the Wi-Fi owner, or anyone on the path learns which sites you visit, and can forge the reply.',H.dnsPk(true,DR,0xa1b2,q),{hop:0.3}),
+        S(0,1,'DoH query (encrypted)','DoH: the same question, hidden','Now the observer sees only an HTTPS connection to 1.1.1.1 and a packet of random-looking bytes. They still see the IP address of the resolver and the size and timing.',f.seg('c','PSH,ACK',[H.tlsApp(160,4,'TLS Record: encrypted DNS query')]),{hop:0.3}),
+        N(0,'what still leaks','What is still visible','The destination IP address (and usually the SNI name) of the site you then connect to. Encrypted Client Hello (ECH) is working to close that gap.',{})
+       ];}}
+    ],
+    quiz:[
+      {q:'What does DoH hide from a network observer?',o:['Your IP address','The names you look up','The sites you connect to afterwards','Everything'],a:1,h:'It protects the DNS query itself.',x:'The query and answer are encrypted. The later connection to the site still reveals an IP and often a name.'},
+      {q:'Who can still see your DoH queries?',o:['Nobody','The resolver you chose','Your router','Everyone'],a:1,h:'Someone must answer them.',x:'The resolver sees every query, so pick one you trust.'},
+      {q:'Why is the DoH DNS transaction ID set to 0?',o:['It is an error','So identical queries produce identical, cacheable HTTP requests','To save bytes','To be anonymous'],a:1,h:'Caching.',x:'HTTP caches key on the body, so the random ID would defeat caching.'}
+    ]
+  });
+
+  /* ---------------- DNSSEC ---------------- */
+  function rrsig(covered,signer){return PK.cat(PK.u16(covered),[13,2],PK.u32(3600),PK.u32(1797000000),PK.u32(1794000000),PK.u16(2371),H.encName(signer),PK.rnd(64,81));}
+  var OPT={name:'',type:'OPT',cls:1232,ttl:0x8000,data:[]};
+  LAB.add({
+    id:'dnssec',n:'DNSSEC',name:'DNSSEC: proving a DNS answer is genuine',kind:'sec',hop:1,rto:1000,
+    tagline:'Digital signatures on DNS records, so a forged answer can be detected.',
+    why:'Plain DNS trusts whatever answer arrives first, so an attacker who can inject a forged reply can send you to the wrong server. DNSSEC adds signatures. Each zone signs its records (RRSIG) with a private key and publishes the public key (DNSKEY). The parent zone vouches for that key with a DS record, so a chain of trust runs from the root down to the name. A validating resolver checks the chain and rejects anything that does not verify. DNSSEC proves authenticity, not privacy.',
+    ideas:[['Chain of trust','Root → .com → example.com. Each level signs a hash of the next level\'s key (DS record). The resolver starts from the root key it already trusts.'],['New record types','RRSIG holds a signature, DNSKEY a public key, DS a fingerprint of a child\'s key.'],['The DO and AD bits','The resolver asks for DNSSEC data with the DO flag. A validated reply carries the AD (authenticated data) flag.'],['Authenticity, not secrecy','Answers stay readable. Use DoH or DoT for privacy.']],
+    facts:[['Records','DNSKEY, RRSIG, DS, NSEC/NSEC3'],['Trust anchor','The root zone key'],['Failure result','SERVFAIL'],['Cost','Larger responses and key management']],
+    dropNote:'The resolver asks again, as with any DNS query.',
+    scenarios:[
+      {id:'ok',l:'Validated answer',d:'A resolver fetches a record plus its signature and key, and verifies them.',
+       actors:[{n:'Laptop',s:'stub resolver'},{n:'Validating resolver',s:'1.1.1.1'},{n:'example.com NS',s:'199.43.135.53'}],
+       steps:function(){
+        var q='example.com',A={name:q,type:'A',ttl:3600,data:H.web},SIG={name:q,type:'RRSIG',ttl:3600,data:rrsig(1,q)},KEY={name:q,type:'DNSKEY',ttl:3600,data:PK.cat(PK.u16(257),[3,13],PK.rnd(64,82))},KSIG={name:q,type:'RRSIG',ttl:3600,data:rrsig(48,q)};
+        var up=function(out,id,msg){return PK.pkt({eth:out?['d4:5d:64:77:10:21','00:1d:e5:3a:07:c9']:['00:1d:e5:3a:07:c9','d4:5d:64:77:10:21'],ip:{src:out?H.res:H.ns,dst:out?H.ns:H.res,ttl:out?64:50,id:id},udp:{sp:out?41822:53,dp:out?53:41822},app:[msg]});};
+        return [
+        S(0,1,'example.com A?','Laptop asks','The laptop does not validate itself. It trusts a validating resolver.',H.dnsPk(true,H.res,0xd001,H.dns({id:0xd001,q:[q,'A'],rd:true})),{hop:0.3}),
+        S(1,2,'A? with DO bit','Resolver asks for signatures too','The query includes an <b>OPT</b> record in the Additional section whose flags have the DO (DNSSEC OK) bit set.',up(true,0xd002,H.dns({id:0xd002,q:[q,'A'],ar:[OPT]}))),
+        S(2,1,'A + RRSIG','Answer with its signature','The answer holds two records: the A record and an <b>RRSIG</b> that signs it. The signature names the key (key tag 2371) and the signer (example.com) and has an expiry time.',up(false,0xd002,H.dns({id:0xd002,q:[q,'A'],resp:true,aa:true,an:[A,SIG],ar:[OPT]}))),
+        S(1,2,'DNSKEY?','Resolver fetches the public key','To check the signature it needs the zone\'s public key.',up(true,0xd003,H.dns({id:0xd003,q:[q,'DNSKEY'],ar:[OPT]}))),
+        S(2,1,'DNSKEY + RRSIG','The key, signed','The key record is itself signed. The resolver compares a hash of the key with the <b>DS</b> record published in the .com zone, which is signed by .com, whose key is vouched for by the root, which the resolver trusts by configuration.',up(false,0xd003,H.dns({id:0xd003,q:[q,'DNSKEY'],resp:true,aa:true,an:[KEY,KSIG],ar:[OPT]}))),
+        N(1,'chain verified','Signature checks out','Root → .com → example.com → the A record. Every link verifies, so the answer is genuine.',{st:{1:'validated'}}),
+        S(1,0,'A 93.184.216.34 (AD)','Resolver tells the laptop: authentic','The reply has the <b>AD</b> flag set (authenticated data) and just the A record.',H.dnsPk(false,H.res,0xd001,H.dns({id:0xd001,q:[q,'A'],resp:true,rd:true,ra:true,ad:true,an:[A]})),{hop:0.3})
+       ];}},
+      {id:'bad',l:'Forged answer',d:'An attacker injects a fake reply. Without a valid signature, it is rejected.',
+       actors:[{n:'Laptop',s:'stub resolver'},{n:'Validating resolver',s:'1.1.1.1'},{n:'Attacker',s:'off-path forger'}],
+       steps:function(){var q='example.com';return [
+        S(0,1,'example.com A?','Laptop asks','',H.dnsPk(true,H.res,0xd101,H.dns({id:0xd101,q:[q,'A'],rd:true})),{hop:0.3}),
+        S(2,1,'A 192.0.2.66 (forged)','The attacker\'s answer arrives first','It guessed the transaction ID and port. It contains an A record pointing at the attacker, but no RRSIG: the attacker does not have the zone\'s private key.',PK.pkt({eth:['00:1d:e5:3a:07:c9','d4:5d:64:77:10:21'],ip:{src:H.ns,dst:H.res,ttl:50,id:0x6666},udp:{sp:53,dp:41822},app:[H.dns({id:0xd102,q:[q,'A'],resp:true,aa:true,an:[{name:q,type:'A',ttl:3600,data:'192.0.2.66'}]})]}),{hop:1}),
+        N(1,'no valid signature','Resolver refuses it','A validating resolver knows example.com is signed (the DS record exists), so an unsigned answer must be a forgery. Without DNSSEC it would have cached the lie and sent it to everyone.',{st:{1:'bogus'}}),
+        S(1,0,'SERVFAIL','Lookup fails safely','The client receives <b>SERVFAIL</b> (rcode 2) instead of a wrong address. Failing is better than being silently redirected.',H.dnsPk(false,H.res,0xd101,H.dns({id:0xd101,q:[q,'A'],resp:true,rd:true,ra:true,rcode:2})),{hop:0.3})
+       ];}}
+    ],
+    quiz:[
+      {q:'What does an RRSIG record contain?',o:['A public key','A signature over a set of DNS records','An IP address','A certificate'],a:1,h:'The "SIG" is for signature.',x:'RRSIG is the digital signature over the records it covers.'},
+      {q:'What does a DS record in the parent zone do?',o:['Stores a secret','Vouches for the child zone\'s key','Lists name servers','Caches answers'],a:1,h:'It links two levels.',x:'It holds a hash of the child\'s DNSKEY, creating the chain of trust.'},
+      {q:'Does DNSSEC hide which names you look up?',o:['Yes','No, it only proves authenticity','Only for .com','Only with UDP'],a:1,h:'Think signatures, not encryption.',x:'DNSSEC signs answers; it does not encrypt them. Use DoH or DoT for privacy.'}
+    ]
+  });
+
+  /* ---------------- SOCKS5 ---------------- */
+  var PXY='192.168.1.5',SE=[H.lapMac,'a4:83:e7:11:22:33'];
+  function sk(name,bytes,txt,d){return PK.L(name,'app',[PK.fraw('Message',bytes,d,txt)]);}
+  LAB.add({
+    id:'socks',n:'SOCKS5',name:'SOCKS5: a general-purpose proxy',kind:'app',hop:1,rto:1000,
+    tagline:'A small binary protocol that lets a client ask a proxy to connect anywhere, for any protocol.',
+    why:'An HTTP proxy understands web requests. SOCKS5 does not: it works at the connection level. The client says "connect me to this host and port", the proxy opens the connection, and after one short reply it relays raw bytes in both directions. That makes it usable for any TCP application (and with UDP ASSOCIATE for UDP). It is what SSH dynamic port forwarding and many privacy tools expose locally.',
+    ideas:[['Method, request, reply','The client lists authentication methods, the server picks one, the client sends the target, and the server replies with a status.'],['Names, not just IPs','The client may send a domain name. The proxy resolves it, so the local network never sees the DNS lookup.'],['Proxy cannot read TLS','Like HTTP CONNECT, once the tunnel is open the proxy only relays encrypted bytes.']],
+    facts:[['Port','TCP 1080 (common)'],['Versions','SOCKS4, SOCKS5 (RFC 1928)'],['Auth','None, username/password (RFC 1929), GSSAPI'],['Commands','CONNECT, BIND, UDP ASSOCIATE']],
+    dropNote:'TCP resends the segment.',
+    scenarios:[
+      {id:'conn',l:'CONNECT by name',d:'Ask the proxy to connect to example.com:443, then run TLS through it.',
+       actors:[{n:'Client',s:'192.168.1.23'},{n:'SOCKS5 proxy',s:'192.168.1.5:1080'},{n:'Web server',s:'93.184.216.34:443'}],
+       steps:function(){var f=H.est(H.flow(H.lap,51770,PXY,1080,{ethOut:SE,ethIn:[SE[1],SE[0]]})),g=H.est(H.flow(PXY,40200,H.web,443,{ethOut:['a4:83:e7:11:22:34',H.ispMac],ethIn:[H.ispMac,'a4:83:e7:11:22:34']})),host=PK.strb('example.com'),ch=H.clientHello(11);
+        return [
+        S(0,1,'greeting: no auth','Which methods can you accept?','Three bytes: version 5, one method offered, method 0 (no authentication).',f.seg('c','PSH,ACK',[sk('SOCKS5 greeting',[5,1,0],'v5, 1 method: no authentication','Version, number of methods, then the methods.')]),{hop:'lan'}),
+        S(1,0,'method: no auth','Proxy accepts','Two bytes: version 5, chosen method 0.',f.seg('s','PSH,ACK',[sk('SOCKS5 method choice',[5,0],'v5, no authentication','The server picked method 0.')]),{hop:'lan'}),
+        S(0,1,'CONNECT example.com:443','Request: connect me to this name','The request: version 5, command 1 (CONNECT), reserved 0, address type <b>3</b> (domain name), name length 11, the name, then the port in two bytes (0x01bb = 443). The proxy will resolve the name, so no DNS query leaves the client.',f.seg('c','PSH,ACK',[sk('SOCKS5 request',PK.cat([5,1,0,3,host.length],host,PK.u16(443)),'CONNECT example.com:443','Version, command, reserved, address type, address, port.')]),{hop:'lan'}),
+        S(1,0,'reply: succeeded','Proxy reports the result','Reply code <b>0</b> means success. The remaining fields give the address and port the proxy used for its outgoing connection (here 0.0.0.0:0).',f.seg('s','PSH,ACK',[sk('SOCKS5 reply',[5,0,0,1,0,0,0,0,0,0],'v5, succeeded, bound 0.0.0.0:0','Version, reply code, reserved, address type, bound address, bound port.')]),{hop:'lan',st:{1:'relaying'}}),
+        S(0,1,'TLS ClientHello','TLS runs through the tunnel','From now on the proxy is a blind relay. This is the same ClientHello as in the TLS lab.',f.seg('c','PSH,ACK',[ch]),{hop:'lan'}),
+        S(1,2,'TLS ClientHello (relayed)','Relayed to the server','The proxy sends the identical bytes on its own connection. The server sees the proxy\'s address.',g.seg('c','PSH,ACK',[ch]),{hop:0.5})
+       ];}},
+      {id:'auth',l:'Login and refusal',d:'The proxy requires a username and password, and then blocks the destination.',
+       actors:[{n:'Client',s:'192.168.1.23'},{n:'SOCKS5 proxy',s:'192.168.1.5:1080'}],
+       steps:function(){var f=H.est(H.flow(H.lap,51771,PXY,1080,{ethOut:SE,ethIn:[SE[1],SE[0]]})),u=PK.strb('ana'),p=PK.strb('hunter2'),host=PK.strb('blocked.example');
+        return [
+        S(0,1,'greeting: 2 methods','Offers no-auth and password','Methods 0 (none) and 2 (username/password).',f.seg('c','PSH,ACK',[sk('SOCKS5 greeting',[5,2,0,2],'v5, methods: none, user/pass','Version, count, methods.')]),{hop:'lan'}),
+        S(1,0,'method: user/pass','Proxy demands a password','It selects method 2.',f.seg('s','PSH,ACK',[sk('SOCKS5 method choice',[5,2],'v5, username/password','The server picked method 2.')]),{hop:'lan'}),
+        S(0,1,'user + password','Credentials','Sub-negotiation version 1, then length-prefixed username and password. Note: sent in <b>clear text</b>.',f.seg('c','PSH,ACK',[sk('SOCKS5 username/password',PK.cat([1,u.length],u,[p.length],p),'ana / hunter2','Version, username length, username, password length, password.')]),{hop:'lan'}),
+        S(1,0,'auth ok','Accepted','Status 0.',f.seg('s','PSH,ACK',[sk('SOCKS5 auth status',[1,0],'success','Version 1, status 0.')]),{hop:'lan'}),
+        S(0,1,'CONNECT blocked.example:443','Ask for a forbidden host','',f.seg('c','PSH,ACK',[sk('SOCKS5 request',PK.cat([5,1,0,3,host.length],host,PK.u16(443)),'CONNECT blocked.example:443','Version, command, reserved, address type, address, port.')]),{hop:'lan'}),
+        S(1,0,'reply: not allowed','Refused by policy','Reply code <b>2</b>: connection not allowed by ruleset. Other codes include 4 (host unreachable) and 5 (connection refused).',f.seg('s','PSH,ACK',[sk('SOCKS5 reply',[5,2,0,1,0,0,0,0,0,0],'v5, not allowed','Version, reply code 2, reserved, address type, bound address, port.')]),{hop:'lan'})
+       ];}}
+    ],
+    quiz:[
+      {q:'What is the difference between SOCKS5 and an HTTP proxy?',o:['SOCKS5 relays any TCP protocol at the connection level','SOCKS5 only handles web pages','SOCKS5 encrypts traffic','HTTP proxies cannot use ports'],a:0,h:'SOCKS does not parse HTTP.',x:'SOCKS5 just opens a connection to host:port for the client, whatever protocol runs over it.'},
+      {q:'Why send a domain name to a SOCKS5 proxy instead of an IP?',o:['It is required','The proxy resolves it, so the local network sees no DNS lookup','It is faster','It adds encryption'],a:1,h:'Think about DNS leaks.',x:'Address type 3 lets the proxy do the DNS lookup.'},
+      {q:'Does SOCKS5 username/password authentication encrypt the password?',o:['Yes','No, it is sent in clear text','Only on port 1080','Only for UDP'],a:1,h:'RFC 1929.',x:'It is plain text, so use it only inside trusted networks or over an encrypted tunnel.'}
+    ]
+  });
+})();
+/* ===== More labs, part 3: WireGuard, IPsec, Wi-Fi, WPA3, RADIUS/802.1X, captive portal ===== */
+(function(){
+  var S=H.S,N=H.N;
+
+  /* ---------------- WireGuard ---------------- */
+  var WS='203.0.113.80';
+  function wgp(dir,layer,o){o=o||{};var out=dir==='out';return PK.pkt({eth:out?H.out:H.in,ip:{src:out?(o.src||H.lap):WS,dst:out?WS:(o.dst||H.lap),ttl:out?64:55,id:o.id||0x5000},udp:{sp:out?51820:51820,dp:51820},app:[layer]});}
+  function wg(type,nm,fields){return PK.L('WireGuard: '+nm,'sec',[PK.F('Message type',[type,0,0,0],type+' ('+nm+')','Message type in one byte followed by three reserved zero bytes.'),].concat(fields));}
+  var wgInit=function(){return wg(1,'handshake initiation',[PK.f32('Sender index',0x7a1c33f0,'A random number the sender uses to find this session, instead of an IP address.',PK.hex(0x7a1c33f0,8)),H.enc('Unencrypted ephemeral',32,1,'A one-time public key for this handshake.','32 bytes, public'),H.enc('Encrypted static',48,2,'The sender\'s long-term public key, encrypted so observers cannot learn who is connecting.','48 bytes'),H.enc('Encrypted timestamp',28,3,'A timestamp that prevents replay of old handshakes.','28 bytes'),H.enc('MAC 1',16,4,'Proves the sender already knows the receiver\'s public key. Packets without a valid MAC1 are silently ignored.','16 bytes'),PK.fraw('MAC 2',PK.fill(16,0),'Used only under load, as a cookie reply defence. Zero here.','16 zero bytes')]);};
+  var wgResp=function(){return wg(2,'handshake response',[PK.f32('Sender index',0x3b9d00e1,'The responder\'s own session number.',PK.hex(0x3b9d00e1,8)),PK.f32('Receiver index',0x7a1c33f0,'Echoes the initiator\'s number.',PK.hex(0x7a1c33f0,8)),H.enc('Unencrypted ephemeral',32,5,'The responder\'s one-time public key.','32 bytes, public'),H.enc('Encrypted empty',16,6,'An empty message, authenticated, confirming both sides derived the same keys.','16 bytes'),H.enc('MAC 1',16,7),PK.fraw('MAC 2',PK.fill(16,0),'Zero unless under load.','16 zero bytes')]);};
+  var wgData=function(ctr,n,sd){return wg(4,'transport data',[PK.f32('Receiver index',0x3b9d00e1,'Which session this packet belongs to.',PK.hex(0x3b9d00e1,8)),PK.fraw('Counter',PK.cat(PK.u32(0),PK.u32(ctr)),'A strictly increasing number used as the nonce and for replay protection.',String(ctr)),H.enc('Encrypted packet',n,sd,'The entire inner IP packet, encrypted and authenticated (padded to a multiple of 16 bytes, plus a 16-byte tag).',n+' bytes')]);};
+  LAB.add({
+    id:'wireguard',n:'WireGuard',name:'WireGuard: a modern VPN',kind:'sec',hop:1,rto:1000,
+    tagline:'A VPN built from a few small, fixed-format messages and modern cryptography.',
+    why:'A VPN wraps whole IP packets inside an encrypted tunnel so they cross an untrusted network safely. WireGuard does this with UDP and a very small design: every peer has a key pair, a peer is identified by its public key, and there is one handshake and one data message type. It stays silent to anyone who does not know the key, and it handles roaming from Wi-Fi to cellular by updating the endpoint whenever an authenticated packet arrives from a new address.',
+    ideas:[['Public keys are identities','There are no certificates or negotiation. Each side lists the public keys it will accept.'],['Whole packets inside','The payload of each transport message is an encrypted copy of an entire inner IP packet (headers included).'],['Silent and stateless-looking','Packets that fail the MAC are dropped without a reply, so scanners see nothing on the port.'],['Roaming','Peers are found by key, not by address, so a changed IP just works.']],
+    facts:[['Transport','UDP, port 51820 by default'],['Handshake','Noise IK, 1 round trip'],['Sizes','Init 148 B, response 92 B, keepalive 32 B'],['Crypto','Curve25519, ChaCha20-Poly1305, BLAKE2s']],
+    dropNote:'WireGuard retries the handshake after a few seconds, and TCP inside the tunnel retransmits as normal.',
+    scenarios:[
+      {id:'hs',l:'Handshake and data',d:'Establish a tunnel with a server and send encrypted traffic.',
+       actors:[{n:'Laptop',s:'peer, 192.168.1.23'},{n:'VPN server',s:'203.0.113.80:51820'}],
+       steps:function(){return [
+        S(0,1,'Handshake initiation','Message type 1: 148 bytes','The laptop sends its ephemeral key and its long-term key (encrypted, so observers do not learn who is connecting) and a timestamp. The two MAC fields mean a server only responds to peers who already know its public key.',wgp('out',wgInit()),{hop:0.5}),
+        S(1,0,'Handshake response','Message type 2: 92 bytes','The server answers with its own ephemeral key and an authenticated empty message. Both sides can now compute the same session keys. One round trip, and no further negotiation.',wgp('in',wgResp(),{id:0x5001}),{hop:0.5,st:{0:'tunnel up',1:'tunnel up'}}),
+        S(0,1,'Transport data #0','Message type 4: encrypted inner packet','An ordinary packet, for example a TCP segment to a private address, is encrypted and carried here. Only the receiver index and counter are visible.',wgp('out',wgData(0,96,10),{id:0x5002}),{hop:0.5}),
+        S(1,0,'Transport data #0','The reply','Each direction has its own counter.',wgp('in',wgData(0,160,11),{id:0x5003}),{hop:0.5}),
+        S(0,1,'Keepalive','Empty message every 25 s','A transport message with no inner packet: 32 bytes. It keeps NAT mappings open.',wgp('out',wgData(1,16,12),{id:0x5004}),{hop:0.5})
+       ];}},
+      {id:'roam',l:'Roaming',d:'The laptop moves from Wi-Fi to cellular and the tunnel keeps working.',
+       actors:[{n:'Laptop',s:'192.168.1.23'},{n:'VPN server',s:'203.0.113.80:51820'}],
+       steps:function(){return [
+        S(0,1,'Transport data (Wi-Fi)','Normal traffic','Source address 192.168.1.23.',wgp('out',wgData(40,96,20),{id:0x5100}),{hop:0.5}),
+        N(0,'new IP: 100.64.8.9','The network changes','The laptop switches to cellular.',{st:{0:'100.64.8.9'}}),
+        S(0,1,'Transport data (cellular)','Same session, new source address','The packet authenticates against the same session. The server finds the session by <b>receiver index</b>, verifies the tag and updates the peer\'s endpoint to the new address. No re-handshake.',wgp('out',wgData(41,96,21),{src:'100.64.8.9',id:0x5101}),{hop:0.5,st:{1:'endpoint updated'}}),
+        S(1,0,'Transport data','Replies go to the new address','',wgp('in',wgData(41,160,22),{dst:'100.64.8.9',id:0x5102}),{hop:0.5})
+       ];}}
+    ],
+    quiz:[
+      {q:'How does WireGuard identify a peer?',o:['IP address','Public key','MAC address','Username'],a:1,h:'No certificates, no usernames.',x:'Each peer is its public key; addresses can change.'},
+      {q:'What does a WireGuard transport message carry?',o:['A DNS query','An encrypted copy of a complete inner IP packet','A password','Only TCP'],a:1,h:'It is a tunnel.',x:'The inner packet, headers and all, is encrypted into the payload.'},
+      {q:'What happens when an unknown host sends a WireGuard server a packet?',o:['An error reply','Nothing: it is silently dropped','A certificate request','A redirect'],a:1,h:'Silent by design.',x:'Without a valid MAC1 the server does not answer, so the port looks closed.'}
+    ]
+  });
+
+  /* ---------------- IPsec ---------------- */
+  var GA='192.0.2.10',GB='198.51.100.20',GE=['02:00:00:aa:10:10','02:00:00:bb:20:20'],GI=[GE[1],GE[0]];
+  function ike(ex,flags,mid,init,resp,pay,next){
+    var len=28+H.sum(pay);
+    return PK.L('IKEv2','sec',[PK.fraw('Initiator SPI',PK.u32(init).concat(PK.u32(0x11223344)),'A random identifier chosen by the initiator for this security association.','8 bytes'),PK.fraw('Responder SPI',resp?PK.cat(PK.u32(0x55667788),PK.u32(0x99aabbcc)):PK.fill(8,0),'Chosen by the responder. Zero in the first request.',resp?'8 bytes':'0'),PK.f8('Next payload',next,'Type of the first payload that follows.'),PK.F('Version',[0x20],'2.0','IKE version 2.'),PK.f8('Exchange type',ex,ex===34?'IKE_SA_INIT: agree algorithms and exchange keys.':'IKE_AUTH: authenticate and create the first child SA.',ex===34?'34 (IKE_SA_INIT)':'35 (IKE_AUTH)'),PK.F('Flags',[flags],flags===8?'Initiator':'Response','Says who sent it and whether it is a response.'),PK.f32('Message ID',mid,'Matches a response to a request.'),PK.f32('Length',len,'Total message length.',len+' bytes')].concat(pay));
+  }
+  function esp(seq,n,sd,dir){
+    var layer=PK.L('ESP','sec',[PK.f32('SPI',0xc0ffee01,'Security Parameters Index: tells the receiver which security association (keys and algorithms) to use.',PK.hex(0xc0ffee01,8)),PK.f32('Sequence number',seq,'Counts up. Prevents replay of captured packets.'),H.enc('IV',8,sd,'Initialisation vector for the cipher.','8 bytes'),H.enc('Encrypted payload',n,sd+1,'In tunnel mode: the whole original IP packet, plus padding and a 2-byte trailer (pad length and next header). Unreadable without the key.',n+' bytes'),H.enc('ICV',16,sd+2,'Integrity check value: detects tampering.','16 bytes')]);
+    var b=PK.lbytes(layer),out=dir==='out';
+    var ip=PK.ip4({src:out?GA:GB,dst:out?GB:GA,proto:50,ttl:64,id:0x6000+seq},b);
+    return PK.done([PK.eth(out?GE[0]:GI[0],out?GE[1]:GI[1],0x0800),ip,layer],{});
+  }
+  LAB.add({
+    id:'ipsec',n:'IPsec',name:'IPsec: encrypting at the IP layer',kind:'sec',hop:1,rto:1000,
+    tagline:'Two gateways agree on keys with IKE, then wrap every packet between two networks in ESP.',
+    why:'IPsec protects IP traffic itself, so every application above it is covered without changes. The Internet Key Exchange (IKEv2, UDP 500) authenticates both ends and agrees on keys and algorithms. After that, packets travel as ESP (IP protocol 50). In <b>tunnel mode</b>, used for site-to-site VPNs, the entire original packet is encrypted and given a new outer IP header addressed from gateway to gateway, hiding the inner addresses completely.',
+    ideas:[['IKE then ESP','IKE is the negotiation. ESP carries the protected data using the keys IKE produced.'],['Tunnel versus transport','Tunnel mode encrypts the whole original packet and adds new IP headers (VPNs). Transport mode encrypts only the payload and keeps the original header.'],['NAT trouble','ESP has no ports, so NAT cannot translate it. NAT traversal wraps ESP in UDP port 4500.']],
+    facts:[['IKE','UDP 500 (4500 behind NAT)'],['ESP','IP protocol 50'],['Modes','Tunnel and transport'],['Also','AH (protocol 51) authenticates but does not encrypt']],
+    dropNote:'IKE retransmits its message after a timeout.',
+    scenarios:[
+      {id:'ike',l:'IKE negotiation',d:'Two gateways authenticate each other and establish keys.',
+       actors:[{n:'Gateway A',s:'192.0.2.10'},{n:'Gateway B',s:'198.51.100.20'}],
+       steps:function(){
+        function u(dir,l,id){var out=dir==='out';return PK.pkt({eth:out?GE:GI,ip:{src:out?GA:GB,dst:out?GB:GA,ttl:out?64:55,id:id},udp:{sp:500,dp:500},app:[l]});}
+        var sa=function(n,sd){return PK.fraw('SA payload',PK.rnd(n,sd),'Proposals of algorithms: encryption, integrity, pseudo-random function and Diffie-Hellman group.',n+' bytes');};
+        return [
+        S(0,1,'IKE_SA_INIT request','Propose algorithms, send a key share','Gateway A sends its proposed algorithms, a Diffie-Hellman public value (KE) and a random nonce. Nothing secret is protected yet, but nobody can derive the shared secret from what is visible.',u('out',ike(34,8,0,0xa1b2c3d4,false,[sa(44,1),PK.fraw('KE payload',PK.rnd(40,2),'Key exchange: group 31 (Curve25519) public value.','40 bytes'),PK.fraw('Nonce payload',PK.rnd(36,3),'Random value mixed into the keys.','36 bytes')],33),0x7001)),
+        S(1,0,'IKE_SA_INIT response','Choose algorithms, send its key share','B picks one proposal and replies with its own public value and nonce. Both gateways now compute the same shared secret and derive keys. Everything from here on is encrypted.',u('in',ike(34,0x20,0,0xa1b2c3d4,true,[sa(36,4),PK.fraw('KE payload',PK.rnd(40,5),'Key exchange public value.','40 bytes'),PK.fraw('Nonce payload',PK.rnd(36,6),'Random value.','36 bytes')],33),0x7002)),
+        S(0,1,'IKE_AUTH request (encrypted)','Prove identity and request a tunnel','Encrypted: A\'s identity, an authentication payload (a signature or pre-shared key proof) and the traffic selectors saying which subnets the tunnel will protect.',u('out',ike(35,8,1,0xa1b2c3d4,true,[H.enc('Encrypted payload (SK)',160,7,'Encrypted and authenticated IKE payloads: identity, authentication, the first child SA and traffic selectors.')],46),0x7003)),
+        S(1,0,'IKE_AUTH response (encrypted)','Authenticated, tunnel agreed','B proves its identity and accepts the child security association, including the <b>SPI</b> it will use for ESP.',u('in',ike(35,0x20,1,0xa1b2c3d4,true,[H.enc('Encrypted payload (SK)',150,8,'Encrypted IKE payloads.')],46),0x7004),{st:{0:'tunnel up',1:'tunnel up'}})
+       ];}},
+      {id:'esp',l:'ESP tunnel traffic',d:'Packets between two private networks, protected by the tunnel.',
+       actors:[{n:'Gateway A',s:'192.0.2.10'},{n:'Gateway B',s:'198.51.100.20'}],
+       steps:function(){return [
+        N(0,'10.1.0.5 pings 10.2.0.9','A host behind Gateway A sends a packet','The packet is addressed to 10.2.0.9, a private address at the other site. Gateway A\'s policy says this traffic must go through the tunnel.',{}),
+        S(0,1,'ESP, seq 1','The whole packet is encrypted','The original IP packet (including its private addresses) is encrypted into the ESP payload. A new outer header is added: protocol <b>50</b>, from 192.0.2.10 to 198.51.100.20. An observer sees only the two gateways.',esp(1,96,30,'out')),
+        N(1,'decrypts, forwards','Gateway B unwraps it','It finds the keys by SPI, checks the sequence number and ICV, decrypts, and delivers the original packet to 10.2.0.9.',{}),
+        S(1,0,'ESP, seq 1','The reply returns the same way','Each direction has its own sequence number and keys.',esp(1,96,33,'in'))
+       ];}}
+    ],
+    quiz:[
+      {q:'What is IKE for?',o:['Encrypting each packet','Authenticating and agreeing on keys for IPsec','Routing','Compression'],a:1,h:'The negotiation phase.',x:'IKE sets up the security association; ESP does the bulk encryption.'},
+      {q:'In tunnel mode, what does an observer see of the inner packet?',o:['Everything','Nothing: only the gateway addresses','The ports only','The payload only'],a:1,h:'A new outer header is added.',x:'The whole original packet is encrypted inside ESP.'},
+      {q:'Why does ESP struggle with NAT?',o:['It uses TCP','It has no port numbers to translate','It is too large','It uses IPv6 only'],a:1,h:'NAT rewrites ports.',x:'NAT traversal wraps ESP in UDP 4500.'}
+    ]
+  });
+
+  /* ---------------- Wi-Fi (802.11) ---------------- */
+  var BSS='9c:3d:cf:0b:7e:44',ATT='de:ad:be:ef:66:66',LAP=H.lapMac;
+  function le16(n,name,d,txt){return PK.F(name,[n&255,(n>>8)&255],txt===undefined?n:txt,d);}
+  var FCN={0x80:'Beacon',0x40:'Probe request',0xb0:'Authentication',0x00:'Association request',0x10:'Association response',0xc0:'Deauthentication',0x88:'QoS Data'};
+  function hdr(fc0,fc1,a1,a2,a3,seq,qos){
+    var f=[PK.F('Frame Control',[fc0,fc1],FCN[fc0]+(fc1&0x40?' (protected)':''),'Type and subtype (what kind of frame) plus flags: To DS, From DS, Protected and more.'),le16(0,'Duration','How long the medium is reserved for this exchange, in microseconds.'),PK.fmac('Address 1 (receiver)',a1,'The device that should receive this frame.'),PK.fmac('Address 2 (transmitter)',a2,'The device that sent it over the air.'),PK.fmac('Address 3',a3,'Meaning depends on direction: usually the BSSID, or the final source or destination.'),le16(seq<<4,'Sequence Control','Frame number, so duplicates can be dropped.',seq)];
+    if(qos)f.push(le16(0,'QoS Control','Traffic priority class.','0'));
+    return PK.L('IEEE 802.11 header','link',f);
+  }
+  function ie(id,b,name,txt,d){return PK.F('IE: '+name,PK.cat([id,b.length],b),txt,d);}
+  function rsn(akm,caps){return ie(48,[1,0,0,0x0f,0xac,4,1,0,0,0x0f,0xac,4,1,0,0,0x0f,0xac,akm,caps&255,caps>>8],'RSN (security)',akm===8?'WPA3: SAE, CCMP, PMF':'WPA2: PSK, CCMP','Security parameters: group and pairwise cipher (CCMP/AES), the key management type (AKM) and management-frame-protection capabilities.');}
+  var SSIDIE=function(){return ie(0,PK.strb('HomeWiFi'),'SSID','HomeWiFi','The network name.');},RATES=function(){return ie(1,[0x82,0x84,0x8b,0x96,0x0c,0x12,0x18,0x24],'Supported rates','1, 2, 5.5, 11, 6, 9, 12, 18 Mbit/s','Data rates the sender supports.');};
+  function wf(layers,note){
+    var b=PK.allBytes(layers),c=PK.crc32(b),fcs=PK.L('FCS','link',[PK.fraw('Frame check sequence',[c&255,(c>>>8)&255,(c>>>16)&255,(c>>>24)&255],'A CRC-32 over the whole frame. Receivers drop frames whose CRC does not match (radio is noisy).',PK.hex(c,8))]);
+    return PK.done(layers.concat([fcs]),{raw:'wifi',banner:note||'<b>Radio frame.</b> Wi-Fi does not use Ethernet headers: this is an 802.11 frame as it travels through the air.'});
+  }
+  function mg(fc0,a1,a2,a3,seq,body,name){return wf([hdr(fc0,0,a1,a2,a3,seq,false),PK.L(name,'link',body)]);}
+  var beacon=function(akm,caps){return mg(0x80,'ff:ff:ff:ff:ff:ff',BSS,BSS,100,[PK.fraw('Timestamp',PK.cat([0x40,0x8d,0xb2,0x31],[0,0,0,0]),'The AP\'s clock in microseconds, used to keep stations in sync.','AP time'),le16(100,'Beacon interval','Time units (1 TU = 1.024 ms) between beacons: about 102 ms.','100 TU'),le16(0x0411,'Capabilities','Infrastructure network with privacy (encryption).','0x0411'),SSIDIE(),RATES(),ie(3,[6],'DS parameter','channel 6','Radio channel in use.'),rsn(akm,caps)],'Beacon');};
+  var eapolKey=function(n,fromAp,o){
+    var info={1:0x008a,2:0x010a,3:0x13ca,4:0x030a}[n],kd=o.kd||[],txt={1:'pairwise, ack',2:'pairwise, MIC',3:'pairwise, install, ack, MIC, secure, encrypted data',4:'pairwise, MIC, secure'}[n];
+    var key=PK.L('EAPOL-Key (message '+n+' of 4)','sec',[
+      PK.F('LLC/SNAP',[0xaa,0xaa,0x03,0,0,0,0x88,0x8e],'EtherType 0x888e','A small header saying this is an 802.1X EAPOL frame.'),
+      PK.F('EAPOL header',[2,3].concat(PK.u16(95+kd.length)),'version 2, type 3 (key), length '+(95+kd.length),'Identifies a key-handshake message.'),
+      PK.f8('Descriptor type',2,'RSN key descriptor.','2 (IEEE 802.11)'),
+      PK.f16('Key information',info,'Bit flags describing this message.',PK.hex(info,4)+' ('+txt+')'),
+      PK.f16('Key length',16,'Length of the pairwise key (AES-128).'),
+      PK.fraw('Replay counter',PK.cat(PK.u32(0),PK.u32(o.rc)),'Prevents replays.',String(o.rc)),
+      PK.fraw('Key nonce',o.nonce,n===1||n===3?'ANonce: a random number from the AP.':n===2?'SNonce: a random number from the station.':'Zero in message 4.',o.nonce.some(function(x){return x;})?'32 random bytes':'zeros'),
+      PK.fraw('Key IV + RSC + ID',PK.fill(32,0),'Unused fields.','32 zero bytes'),
+      PK.fraw('MIC',n===1?PK.fill(16,0):PK.rnd(16,200+n),n===1?'Not yet possible: no keys exist.':'Message integrity code, computed with the key derived from the passphrase and both nonces. A wrong passphrase makes this fail.','16 bytes'),
+      PK.f16('Key data length',kd.length,'Bytes of key data.'),
+      PK.fraw('Key data',kd,n===2?'The station\'s RSN information element.':n===3?'RSN element and the group key (GTK), encrypted.':'None.',kd.length+' bytes')
+    ]);
+    var h=hdr(0x88,fromAp?0x02:0x01,fromAp?LAP:BSS,fromAp?BSS:LAP,fromAp?BSS:BSS,200+n,true);
+    return wf([h,key]);
+  };
+  function cdata(fromAp,n,sd,seq){
+    var h=hdr(0x88,(fromAp?0x02:0x01)|0x40,fromAp?LAP:BSS,fromAp?BSS:LAP,BSS,seq,true);
+    return wf([h,PK.L('CCMP','sec',[PK.fraw('CCMP header',[0x07,0,0,0x20,0,0,0,0],'Packet number (a replay counter) and key ID.','PN 7'),H.enc('Encrypted data',n,sd,'The LLC header, the IP packet and the rest of the payload, all encrypted with AES-CCMP.'),PK.fraw('MIC',PK.rnd(8,sd+1),'Integrity check.','8 bytes')])]);
+  }
+  var wifiIntro='A device on the network that is not the AP or station can read every unencrypted management frame.';
+  function auth(a,b,c,d,seq,algo,s,status,extra,dir){return mg(0xb0,a,b,c,seq,[le16(algo,'Authentication algorithm','0 is open system (no real authentication). 3 is SAE, used by WPA3.',algo===0?'0 (open system)':'3 (SAE)'),le16(s,'Transaction sequence','Step number within the authentication exchange.'),le16(status,'Status code','0 means success.')].concat(extra||[]),'Authentication');}
+  function assocReq(akm,caps){return mg(0x00,BSS,LAP,BSS,110,[le16(0x0411,'Capabilities','Capabilities requested.','0x0411'),le16(10,'Listen interval','How many beacons the station may sleep through.'),SSIDIE(),RATES(),rsn(akm,caps)],'Association request');}
+  function assocResp(){return mg(0x10,LAP,BSS,BSS,111,[le16(0x0411,'Capabilities','Capabilities granted.','0x0411'),le16(0,'Status code','0 means success.'),le16(0xc001,'Association ID','A short number (1) identifying this station to the AP, with the top two bits set.','1'),RATES()],'Association response');}
+  var RSN2=PK.cat([48,20,1,0,0,0x0f,0xac,4,1,0,0,0x0f,0xac,4,1,0,0,0x0f,0xac,2,0,0]);
+  function fourWay(rcStart,pmfNote){return [
+    S(1,0,'EAPOL msg 1 (ANonce)','4-way handshake 1: AP sends a nonce','Both sides already share a secret derived from the passphrase (the PMK). The AP sends a random <b>ANonce</b>. The station will combine it with its own nonce and both MAC addresses to make fresh session keys.',eapolKey(1,true,{rc:1,nonce:PK.rnd(32,301)})),
+    S(0,1,'EAPOL msg 2 (SNonce + MIC)','2: station sends its nonce, with proof','The <b>MIC</b> proves the station knows the PMK, without sending it. A wrong passphrase makes the MIC fail and the AP stops here.',eapolKey(2,false,{rc:1,nonce:PK.rnd(32,302),kd:RSN2})),
+    S(1,0,'EAPOL msg 3 (install + GTK)','3: AP confirms and delivers the group key','The AP shows it also holds the key and sends the encrypted group key (GTK) used for broadcast traffic.',eapolKey(3,true,{rc:2,nonce:PK.rnd(32,301),kd:PK.rnd(56,303)})),
+    S(0,1,'EAPOL msg 4 (done)','4: station acknowledges','Both sides now install the keys. From here every data frame is encrypted with AES-CCMP.',eapolKey(4,false,{rc:2,nonce:PK.fill(32,0)}),{st:{0:'keys installed',1:'keys installed'}})
+  ];}
+  LAB.add({
+    id:'wifi',n:'Wi-Fi',name:'Wi-Fi (802.11): joining a wireless network',kind:'link',lan:true,hop:'lan',rto:1000,
+    tagline:'How a laptop discovers an access point, joins it and sets up encryption over the air.',
+    why:'Wi-Fi replaces the Ethernet cable with radio, and the frames look different: 802.11 headers have up to four addresses, and management frames handle discovery and joining. A device listens for the AP\'s <b>beacons</b>, authenticates, associates, and then runs a four-message handshake that turns the shared passphrase into fresh encryption keys for this session. Only after that do ordinary IP packets flow, encrypted over the air.',
+    ideas:[['Management, control and data','Beacons, authentication, association and deauthentication are management frames. They carry the join procedure and, in older Wi-Fi, are not protected.'],['Passphrase to session keys','The passphrase becomes a master key (PMK). The 4-way handshake mixes in two random nonces and both MACs to derive new keys for each connection.'],['Radio is a shared medium','Everyone in range hears every frame. Encryption, not wire access, keeps data private.'],['Deauthentication attacks','An attacker can forge a deauth frame from the AP and kick a client off if management frames are unprotected.']],
+    facts:[['Layer','Link layer (replaces Ethernet)'],['Standards','802.11n/ac/ax/be (Wi-Fi 4 to 7)'],['Security','WPA2 (AES-CCMP), WPA3 (SAE)'],['Frame check','CRC-32 FCS']],
+    dropNote:'The sender retransmits at the radio level automatically if it does not get an acknowledgement, so this cost shows up as extra delay.',
+    scenarios:[
+      {id:'join',l:'Joining (WPA2)',d:'A laptop joins a WPA2-Personal network: beacon, authenticate, associate, 4-way handshake, first data.',
+       actors:[{n:'Laptop',s:LAP},{n:'Access point',s:BSS}],
+       steps:function(){return [
+        S(1,0,'Beacon: HomeWiFi','The AP announces itself','Roughly every 100 ms the AP broadcasts a <b>beacon</b>: network name (SSID), supported rates, channel and the security it requires (the RSN element: WPA2 with AES and a pre-shared key).',beacon(2,0),{st:{0:'scanning'}}),
+        S(0,1,'Authentication (open)','Step 1: open authentication','This step is a formality: algorithm 0 means "open system". Real security comes later.',auth(BSS,LAP,BSS,0,101,0,1,0)),
+        S(1,0,'Authentication (open)','Step 1 reply','Status 0: accepted.',auth(LAP,BSS,BSS,0,102,0,2,0),{st:{0:'authenticated'}}),
+        S(0,1,'Association request','Request to join','The station names the network and repeats the security it will use.',assocReq(2,0)),
+        S(1,0,'Association response','Joined, AID 1','The AP assigns an association ID. The station is now associated but cannot yet send protected data.',assocResp(),{st:{0:'associated'}})
+       ].concat(fourWay(1)).concat([
+        S(0,1,'Encrypted data','Protected data frames','Everything is encrypted with AES-CCMP: only the 802.11 header is readable. The next frames carry DHCP (see the DHCP lab) and then your traffic.',cdata(false,120,310,120),{st:{0:'connected'}})
+       ]);}},
+      {id:'deauth',l:'Deauth attack',d:'An attacker forges a deauthentication frame to disconnect a client.',
+       actors:[{n:'Laptop',s:LAP},{n:'Access point',s:BSS},{n:'Attacker',s:ATT}],
+       st0:{0:'connected'},
+       steps:function(){return [
+        S(1,0,'Encrypted data','Normal traffic','The laptop is connected and exchanging encrypted data.',cdata(true,140,320,130)),
+        S(2,0,'Deauth (spoofed as the AP)','A forged deauthentication frame','The attacker sets the transmitter and BSSID addresses to the AP\'s. In WPA2 without management-frame protection nothing authenticates this frame. Reason code 7: "class 3 frame from a non-associated station".',mg(0xc0,LAP,BSS,BSS,131,[le16(7,'Reason code','Why the sender says the station is being removed.','7')],'Deauthentication'),{st:{0:'disconnected'}}),
+        N(0,'forced to rejoin','The laptop drops off','It must scan and run the whole join sequence again. Attackers often do this to capture the 4-way handshake for offline password guessing, or to push users to a fake AP.',{}),
+        N(1,'defence: PMF','Protected management frames','With 802.11w (Protected Management Frames, mandatory in WPA3) deauth frames are authenticated, so forged ones are ignored.',{})
+       ];}}
+    ],
+    quiz:[
+      {q:'Which frame advertises a network\'s name?',o:['Beacon','Association request','Deauth','ACK'],a:0,h:'About ten per second.',x:'Beacons broadcast the SSID, rates, channel and security settings.'},
+      {q:'What does the 4-way handshake accomplish?',o:['It finds the AP','It derives fresh session keys from the shared passphrase','It assigns an IP address','It sets the channel'],a:1,h:'Nonces from both sides.',x:'Both sides prove knowledge of the PMK and derive new keys for this session.'},
+      {q:'Why can a forged deauth frame disconnect a client?',o:['Radio is secure','Management frames are not authenticated without PMF','Deauth is encrypted','It needs the passphrase'],a:1,h:'802.11w.',x:'Without protected management frames anyone can spoof them.'}
+    ]
+  });
+
+  /* ---------------- WPA3 ---------------- */
+  LAB.add({
+    id:'wpa3',n:'WPA3',name:'WPA3: stronger Wi-Fi passwords with SAE',kind:'sec',lan:true,hop:'lan',rto:1000,
+    tagline:'Dragonfly (SAE) lets two devices prove they know a password without exposing anything that can be guessed offline.',
+    why:'With WPA2-Personal, an attacker who records the 4-way handshake can try millions of passwords offline against the captured MIC. WPA3-Personal replaces the pre-shared-key step with <b>SAE</b>, a password-authenticated key exchange. Each guess requires an interactive attempt with the AP, and a stolen recording cannot be used later. WPA3 also makes protected management frames mandatory and gives forward secrecy: recording traffic and learning the password later does not reveal old sessions.',
+    ideas:[['No offline guessing','Captured SAE frames do not let an attacker test passwords on their own hardware. Every guess needs a live exchange.'],['Forward secrecy','Each session\'s keys come from a fresh exchange, so a password leaked later cannot decrypt old recordings.'],['PMF required','Deauth forgery stops working: management frames are authenticated.']],
+    facts:[['Handshake','SAE (Dragonfly), then the usual 4-way for keys'],['Group','19 (NIST P-256)'],['PMF','Mandatory'],['Related','Enhanced Open (OWE) encrypts open networks']],
+    dropNote:'Radio-level retransmission handles this.',
+    scenarios:[
+      {id:'sae',l:'SAE join',d:'Commit and confirm in the authentication frames, then association and the 4-way handshake.',
+       actors:[{n:'Laptop',s:LAP},{n:'Access point',s:BSS}],
+       steps:function(){
+        var commit=function(sd){return [PK.F('Group',[19,0],'19 (NIST P-256)','The elliptic curve group used.'),PK.fraw('Scalar',PK.rnd(32,sd),'A random-looking number derived from the password and a random value. It does not reveal either.','32 bytes'),PK.fraw('Element',PK.rnd(64,sd+1),'A curve point derived the same way.','64 bytes')];};
+        var confirm=function(sd){return [le16(1,'Send-confirm','A counter that guards against replay.'),PK.fraw('Confirm',PK.rnd(32,sd),'Proves the sender computed the same shared secret, hence knows the password.','32 bytes')];};
+        return [
+        S(1,0,'Beacon: WPA3 (SAE)','The AP announces SAE','The RSN element now lists key management type <b>8 (SAE)</b> and says protected management frames are <b>required</b>.',beacon(8,0x00c0),{st:{0:'scanning'}}),
+        S(0,1,'SAE Commit','Authentication: commit','The station sends a <b>scalar and an element</b> derived from the password and fresh random numbers. Unlike WPA2, this contains nothing an eavesdropper can use to test password guesses.',auth(BSS,LAP,BSS,0,101,3,1,0,commit(311))),
+        S(1,0,'SAE Commit','The AP commits too','Both sides commit at the same time. Each can now compute the same shared secret, but only if they used the same password.',auth(LAP,BSS,BSS,0,102,3,1,0,commit(313))),
+        S(0,1,'SAE Confirm','Station proves the secret','A confirm value is a MAC over both commits. If the passwords differ, the confirm fails and no keys are made.',auth(BSS,LAP,BSS,0,103,3,2,0,confirm(315))),
+        S(1,0,'SAE Confirm','AP proves it too','Mutual proof of knowing the password.',auth(LAP,BSS,BSS,0,104,3,2,0,confirm(316)),{st:{0:'authenticated'}}),
+        S(0,1,'Association request','Request to join, PMF required','',assocReq(8,0x00c0)),
+        S(1,0,'Association response','Joined','',assocResp(),{st:{0:'associated'}})
+       ].concat(fourWay(1)).concat([
+        S(0,1,'Encrypted data','Protected data','Encrypted with keys that came from a fresh exchange: forward secrecy.',cdata(false,120,330,140),{st:{0:'connected'}})
+       ]);}},
+      {id:'pmf',l:'Deauth fails',d:'The same forged deauthentication that worked on WPA2 is ignored.',
+       actors:[{n:'Laptop',s:LAP},{n:'Access point',s:BSS},{n:'Attacker',s:ATT}],
+       st0:{0:'connected (PMF)'},
+       steps:function(){return [
+        S(2,0,'Deauth (spoofed)','The attack is tried again','The frame is unprotected: it lacks the encryption and integrity code that WPA3 requires on management frames.',mg(0xc0,LAP,BSS,BSS,150,[le16(7,'Reason code','Reason.','7')],'Deauthentication'),{lost:true,lostText:'The laptop drops the frame because it is not protected with the session key.'}),
+        N(0,'ignores it','Still connected','With protected management frames, only the real AP can tell the station to leave. The attacker needs a different attack.',{})
+       ];}}
+    ],
+    quiz:[
+      {q:'What weakness of WPA2-Personal does SAE fix?',o:['Slow speed','Offline password guessing from captured handshakes','Channel interference','Range'],a:1,h:'Think about recorded traffic.',x:'With SAE, each guess needs a live interaction with the AP.'},
+      {q:'What is forward secrecy?',o:['Faster handshakes','Old sessions stay secret even if the password leaks later','A longer password','Hidden SSIDs'],a:1,h:'Fresh keys each time.',x:'Session keys do not depend only on the password, so a later leak cannot decrypt past traffic.'},
+      {q:'What does mandatory PMF stop?',o:['Beacons','Forged deauthentication frames','Association','DHCP'],a:1,h:'802.11w.',x:'Unprotected management frames are ignored.'}
+    ]
+  });
+
+  /* ---------------- RADIUS + 802.1X ---------------- */
+  var APM='02:11:22:33:44:55',RSV='10.0.0.9',APIP='192.168.1.2';
+  function eapol(src,dst,type,eap){
+    var len=eap?H.blen(eap):0;
+    var l=PK.L('EAPOL (802.1X)','sec',[PK.f8('Version',2,'802.1X version.','2'),PK.F('Packet type',[type],type===0?'0 (EAP packet)':'1 (EAPOL-Start)','0 carries an EAP message, 1 asks the authenticator to begin.'),PK.f16('Length',len,'Length of the EAP packet that follows.',len+' bytes')]);
+    return PK.done([PK.eth(src,dst,0x888e),l].concat(eap?[eap]:[]),{});
+  }
+  function eap(code,id,type,data){
+    var nm={1:'Request',2:'Response',3:'Success',4:'Failure'}[code],tn={1:'Identity',25:'PEAP'}[type];
+    var body=PK.cat(type?[type]:[],data||[]),len=4+body.length;
+    return PK.L('EAP '+nm+(tn?' / '+tn:''),'sec',[PK.F('Code',[code],code+' ('+nm+')','Request, Response, Success or Failure.'),PK.f8('Identifier',id,'Matches a response to a request.'),PK.f16('Length',len,'Length of the EAP packet.',len+' bytes')].concat(type?[PK.F('Type',[type],type+' ('+tn+')','The EAP method.')]:[],data&&data.length?[PK.fraw('Data',data,type===1?'The identity or the request prompt.':'Method data.',type===1&&code===2?'"'+String.fromCharCode.apply(null,data)+'"':data.length+' bytes')]:[]));
+  }
+  function rad(code,id,attrs){
+    var nm={1:'Access-Request',2:'Access-Accept',3:'Access-Reject',11:'Access-Challenge'}[code],len=20+H.sum(attrs);
+    return PK.L('RADIUS '+nm,'app',[PK.f8('Code',code,'The message type.',code+' ('+nm+')'),PK.f8('Identifier',id,'Matches a response to a request.'),PK.f16('Length',len,'Total message length.',len+' bytes'),H.enc('Authenticator',16,40+id,'A random value in requests; in replies a hash that proves the server knows the shared secret.','16 bytes')].concat(attrs));
+  }
+  function ra(t,name,b,txt,d){return PK.F('Attribute: '+name,PK.cat([t,b.length+2],b),txt,d);}
+  var RA=function(){return [ra(1,'User-Name',PK.strb('ana@corp.example'),'ana@corp.example','The identity the user typed.'),ra(4,'NAS-IP-Address',PK.ipb(APIP),APIP,'The access point asking.'),ra(61,'NAS-Port-Type',PK.u32(19),'Wireless 802.11','How the user connected.')];};
+  function rp(dir,id,layer){var out=dir==='out';return PK.pkt({eth:out?['02:11:22:33:44:56',H.rtrMac]:[H.rtrMac,'02:11:22:33:44:56'],ip:{src:out?APIP:RSV,dst:out?RSV:APIP,ttl:out?64:62,id:id},udp:{sp:out?48210:1812,dp:out?1812:48210},app:[layer]});}
+  LAB.add({
+    id:'radius',n:'RADIUS / 802.1X',name:'802.1X and RADIUS: logging in to a network',kind:'sec',hop:'lan',lan:true,rto:1000,
+    tagline:'Enterprise Wi-Fi and wired ports that ask each person to prove who they are before letting them on.',
+    why:'A shared Wi-Fi password cannot tell users apart or be revoked for one person. 802.1X puts a gate on every network port: the device (the <b>supplicant</b>) talks to the switch or access point (the <b>authenticator</b>) using EAP over the link, and the authenticator relays the conversation to a <b>RADIUS</b> server that checks the credentials. Until the server says Accept, the port passes nothing except the authentication exchange. The RADIUS server also supplies the keys, and can assign each user to a VLAN.',
+    ideas:[['Three roles','Supplicant (your device), authenticator (the AP or switch, which just relays), authentication server (RADIUS).'],['EAP is a container','EAP carries many methods: EAP-TLS (certificates), PEAP and EAP-TTLS (a TLS tunnel carrying a password check).'],['Per-user keys','Each login produces its own master key, handed to the AP, so users cannot read each other\'s traffic.'],['Central control','Policies, VLANs and revocation happen in one place.']],
+    facts:[['EAP over LAN','EtherType 0x888e'],['RADIUS','UDP 1812 (authentication), 1813 (accounting)'],['Shared secret','AP and RADIUS server share one to protect attributes'],['Methods','EAP-TLS, PEAP, EAP-TTLS']],
+    dropNote:'RADIUS clients retransmit the request after a short timeout.',
+    scenarios:[
+      {id:'ok',l:'Successful login',d:'A user authenticates with a PEAP login, and the port opens.',
+       actors:[{n:'Laptop',s:'supplicant'},{n:'Access point',s:'authenticator'},{n:'RADIUS server',s:'10.0.0.9'}],
+       steps:function(){var EG='01:80:c2:00:00:03';return [
+        S(0,1,'EAPOL-Start','Laptop: "I would like to log in"','Sent to the special 802.1X group address. Until authentication finishes, the port blocks everything else.',eapol(LAP,EG,1,null),{st:{0:'unauthenticated'}}),
+        S(1,0,'EAP Request/Identity','AP asks who is there','',eapol(APM,LAP,0,eap(1,1,1,[])),{}),
+        S(0,1,'EAP Response/Identity','Laptop sends the identity','The outer identity is often sent in plain text, sometimes as an anonymous name, because the real login happens in the tunnel later.',eapol(LAP,APM,0,eap(2,1,1,PK.strb('ana@corp.example')))),
+        S(1,2,'Access-Request','AP relays it to the RADIUS server','The AP is only a relay: it puts the EAP message into a RADIUS <b>EAP-Message</b> attribute along with its own address and the port type, and sends it over UDP 1812.',rp('out',0x8001,rad(1,7,RA().concat([ra(79,'EAP-Message',PK.cat([2,1,0,22,1],PK.strb('ana@corp.example')),'EAP Response/Identity','The EAP packet carried inside RADIUS.'),ra(80,'Message-Authenticator',PK.rnd(16,60),'16 bytes','A keyed hash over the whole message, using the shared secret between the AP and server.')]))),{hop:'lan'}),
+        S(2,1,'Access-Challenge: start PEAP','Server starts the method','The server answers with a <b>Challenge</b> that carries an EAP request for the PEAP method. The AP will forward it unchanged.',rp('in',0x8002,rad(11,7,[ra(79,'EAP-Message',PK.cat([1,2,0,6,25,0x20]),'EAP Request/PEAP (start)','The server asks to begin a TLS tunnel.'),ra(24,'State',PK.rnd(16,61),'16 bytes','Opaque state the AP must echo back, so the server can continue the conversation.'),ra(80,'Message-Authenticator',PK.rnd(16,62),'16 bytes','Keyed hash.')])),{hop:'lan'}),
+        S(1,0,'EAP Request/PEAP','AP forwards it to the laptop','',eapol(APM,LAP,0,eap(1,2,25,[0x20]))),
+        N(0,'TLS tunnel inside EAP','Several more round trips','The laptop and RADIUS server run a TLS handshake <b>through</b> the AP, carried in EAP messages. The laptop verifies the server\'s certificate, then sends the password check (MSCHAPv2) inside the tunnel. The AP cannot read it.',{st:{0:'authenticating'}}),
+        S(2,1,'Access-Accept + keys','Server accepts','<b>Access-Accept</b> carries an EAP Success and an encrypted <b>master key</b> (MS-MPPE-Recv-Key) that both the AP and laptop can derive. It can also name a VLAN for this user.',rp('in',0x8003,rad(2,9,[ra(79,'EAP-Message',[3,3,0,4],'EAP Success','Tells the supplicant it passed.'),ra(26,'MS-MPPE-Recv-Key',PK.rnd(42,63),'encrypted key','The master key, encrypted with the shared secret.'),ra(80,'Message-Authenticator',PK.rnd(16,64),'16 bytes','Keyed hash.')])),{hop:'lan'}),
+        S(1,0,'EAP Success','AP opens the port','',eapol(APM,LAP,0,eap(3,3,0,[])),{st:{0:'authorized'}}),
+        N(1,'4-way handshake next','Now the encryption keys','The master key feeds the same 4-way handshake you saw in the Wi-Fi lab, so every user gets unique session keys.',{})
+       ];}},
+      {id:'bad',l:'Wrong password',d:'The credentials fail inside the tunnel and the server rejects the user.',
+       actors:[{n:'Laptop',s:'supplicant'},{n:'Access point',s:'authenticator'},{n:'RADIUS server',s:'10.0.0.9'}],
+       steps:function(){return [
+        N(0,'inner password sent','Credentials checked in the tunnel','Inside the TLS tunnel the laptop sent a password response. The RADIUS server checked it against the directory, and it did not match.',{}),
+        S(2,1,'Access-Reject','Server rejects','<b>Access-Reject</b> with an EAP Failure.',rp('in',0x8010,rad(3,12,[ra(79,'EAP-Message',[4,5,0,4],'EAP Failure','Tells the supplicant it failed.'),ra(80,'Message-Authenticator',PK.rnd(16,65),'16 bytes','Keyed hash.')])),{hop:'lan'}),
+        S(1,0,'EAP Failure','AP keeps the port closed','The laptop stays blocked. It cannot get an address or send any traffic.',eapol(APM,LAP,0,eap(4,5,0,[])),{st:{0:'blocked'}})
+       ];}}
+    ],
+    quiz:[
+      {q:'In 802.1X, what is the "authenticator"?',o:['The user\'s device','The switch or access point that relays between device and server','The RADIUS server','The DNS server'],a:1,h:'It is the gatekeeper.',x:'The authenticator controls the port and relays EAP to the authentication server.'},
+      {q:'What does the RADIUS server give the AP when it accepts a user?',o:['A web page','A master key (and optionally a VLAN)','A certificate','An IP address'],a:1,h:'So each user gets unique keys.',x:'The master key seeds per-user session keys.'},
+      {q:'Why use PEAP or EAP-TLS rather than sending a password directly?',o:['They are shorter','A TLS tunnel protects the credentials from eavesdroppers','They avoid RADIUS','They use IPv6'],a:1,h:'The AP just relays.',x:'The server\'s certificate is verified and the password check runs inside an encrypted tunnel.'}
+    ]
+  });
+
+  /* ---------------- Captive portal ---------------- */
+  var CP='192.168.1.1',GEN='142.250.80.46';
+  function creq(host,path,extra){return PK.textLayer('HTTP request','app','GET '+path+' HTTP/1.1',[['Host',host],['User-Agent','CaptiveNetworkSupport/1.0'],['Accept','*/*']].concat(extra||[]),null,{startName:'Request line',start:'An ordinary HTTP GET.'});}
+  LAB.add({
+    id:'captive',n:'Captive portal',name:'Captive portals: the hotel Wi-Fi login page',kind:'app',hop:'lan',lan:true,rto:1000,
+    tagline:'How a network intercepts your first web request and sends you to a login or terms page.',
+    why:'On hotel, airport and cafe Wi-Fi you can connect but not use the internet until you click through a page. There is no special protocol: the gateway simply lets you reach DHCP and DNS, then intercepts HTTP requests and answers them with a redirect to its own login page. Your device finds out because, as soon as it connects, the operating system sends a tiny HTTP request to a known address and checks whether it gets the expected answer.',
+    ideas:[['Detection probe','The OS requests a known URL (for example a page that should return 204 or a fixed text). A redirect or different body means "captive network".'],['Interception','The gateway answers on behalf of the real server, using the server\'s address, so the client believes the redirect came from there.'],['Allow-list after login','On success the gateway adds the device (by MAC or IP) to a list that may use the internet.'],['Why HTTP, not HTTPS','A gateway cannot redirect HTTPS without causing certificate errors. So probes and the portal use plain HTTP.']],
+    facts:[['Probe','Plain HTTP on port 80'],['Redirect','302 to the portal'],['Later check','The probe returns the real answer when online'],['Weak point','Anyone can spoof a MAC that has already logged in']],
+    dropNote:'TCP resends the segment.',
+    scenarios:[
+      {id:'login',l:'Detection and login',d:'The laptop joins, notices a captive portal, logs in and gets online.',
+       actors:[{n:'Laptop',s:'192.168.1.23'},{n:'Gateway / portal',s:'192.168.1.1'}],
+       steps:function(){var f=H.est(H.flow(H.lap,51780,GEN,80)),p=H.est(H.flow(H.lap,51781,CP,80)),f2=H.est(H.flow(H.lap,51782,GEN,80));
+        var form='<form method="post" action="/login"><label><input type="checkbox" name="accept"> I accept the terms</label><button>Connect</button></form>';
+        return [
+        N(0,'joined Wi-Fi, got DHCP','Connected but not online','DHCP and DNS work, so the laptop has an address. The gateway lets those through and blocks other traffic.',{}),
+        S(0,1,'GET /generate_204','The OS probes a known URL','Sent to a real internet address. The expected reply is "204 No Content". Anything else means a captive portal.',f.seg('c','PSH,ACK',[creq('connectivitycheck.gstatic.com','/generate_204')])),
+        S(1,0,'302 to the portal','The gateway pretends to be the server','It answers using the server\'s own IP address, with a <b>302 redirect</b> to the portal page. The laptop cannot tell the difference at this level.',f.seg('s','PSH,ACK',[H.resp(302,'Found',[['Location','http://192.168.1.1/portal?orig=generate_204'],['Cache-Control','no-cache']],null)]),{st:{0:'captive portal detected'}}),
+        N(0,'opens login window','The OS shows a pop-up','Seeing a redirect instead of a 204, the OS opens a small browser window pointed at the Location address.',{}),
+        S(0,1,'GET /portal','Browser loads the portal page','A normal request to the gateway itself.',p.seg('c','PSH,ACK',[creq(CP,'/portal?orig=generate_204')])),
+        S(1,0,'200 OK (login form)','The terms page','A form with a checkbox and a button. Real portals may also ask for a room number, voucher or social login.',p.seg('s','PSH,ACK',[H.resp(200,'OK',[['Content-Type','text/html']],form)])),
+        S(0,1,'POST /login','User accepts and submits','Sent over plain HTTP. If the portal asks for a password here, it is visible to everyone on the Wi-Fi.',p.seg('c','PSH,ACK',[PK.textLayer('HTTP request','app','POST /login HTTP/1.1',[['Host',CP],['Content-Type','application/x-www-form-urlencoded'],['Content-Length','8']],'accept=1',{startName:'Request line',start:'Submitting the form.',body:'The form field: the user accepted the terms.'})])),
+        S(1,0,'302 + allow-list','Portal approves the device','The gateway records this laptop (by MAC and IP) as allowed. From now on its traffic is forwarded.',p.seg('s','PSH,ACK',[H.resp(302,'Found',[['Location','http://192.168.1.1/success'],['Set-Cookie','portal=ok; Path=/']],null)]),{st:{0:'allowed'}}),
+        S(0,1,'GET /generate_204','The OS probes again','Same request as before.',f2.seg('c','PSH,ACK',[creq('connectivitycheck.gstatic.com','/generate_204')])),
+        S(1,0,'204 No Content','Now the real answer arrives','The request is forwarded to the real server this time (the reply is shown from the laptop\'s view). The OS marks the network as online.',f2.seg('s','PSH,ACK',[H.resp(204,'No Content',[],null)]),{hop:1,st:{0:'online'}})
+       ];}},
+      {id:'https',l:'Why HTTPS breaks',d:'Opening an HTTPS site before logging in cannot be redirected cleanly.',
+       actors:[{n:'Laptop',s:'192.168.1.23'},{n:'Gateway / portal',s:'192.168.1.1'}],
+       steps:function(){var f=H.flow(H.lap,51790,H.web,443);return [
+        S(0,1,'TLS ClientHello','Browser opens an HTTPS site','The laptop starts a TLS handshake with example.com. The gateway cannot answer for example.com without a certificate that proves it is example.com.',f.seg('c','SYN'),{}),
+        S(1,0,'RST','The gateway blocks it','It can only reset the connection or let it time out. If it did answer with its own certificate the browser would show a scary certificate error.',f.seg('s','RST,ACK',[],{seq:0,opts:[],win:0}),{}),
+        N(0,'browser shows an error','Why probes use plain HTTP','Redirecting HTTPS is impossible without breaking security. That is why the OS probes with plain HTTP, and why you should never rely on a captive portal page to be secure. Treat open Wi-Fi as hostile and use a VPN or HTTPS.',{})
+       ];}}
+    ],
+    quiz:[
+      {q:'How does your phone know it is on a captive portal network?',o:['The router tells it','A probe request to a known URL gets a redirect instead of the expected answer','DNS fails','It reads the SSID'],a:1,h:'A tiny HTTP request.',x:'The OS fetches a known URL and compares the result with what it expects.'},
+      {q:'What does the gateway use to remember that you have logged in?',o:['A cookie only','Your MAC and IP address in an allow-list','Your name','TLS'],a:1,h:'Think network-level.',x:'Gateways usually authorise a device by MAC and IP.'},
+      {q:'Why are probes sent over plain HTTP?',o:['It is faster','The gateway cannot redirect HTTPS without certificate errors','HTTPS is blocked everywhere','No reason'],a:1,h:'Certificates prove identity.',x:'A forged HTTPS answer fails certificate validation.'}
     ]
   });
 })();
