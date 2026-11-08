@@ -1,0 +1,1893 @@
+<title>Internet Protocol Lab</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,800&family=IBM+Plex+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+:root{
+  /* Layout: protocol picker on top, a sequence diagram beside a byte-level packet inspector. Stacks on phones. */
+  --bg:#E8ECF2; --surface:#F7F9FC; --ink:#0F1726; --ink-2:#4A576C; --line:#C8D0DC;
+  --accent:#0F1726; --accent-ink:#F7F9FC; --focus:#2D62D6; --pkt:#E58A00; --pkt-ink:#0F1726;
+  --ok:#1E8A4C; --warn:#9A5B00; --bad:#C23A2C;
+  --c-link:#0B8479; --c-net:#2D62D6; --c-trans:#C2410C; --c-sec:#7A3FE0; --c-app:#17803D;
+  --grid:rgba(15,23,38,.06);
+  --f-display:'Bricolage Grotesque','Segoe UI',system-ui,sans-serif;
+  --f-body:'IBM Plex Sans','Segoe UI',system-ui,sans-serif;
+  --f-mono:'JetBrains Mono',ui-monospace,Menlo,Consolas,monospace;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#0A101C; --surface:#121A2B; --ink:#E6ECF7; --ink-2:#97A6BF; --line:#26334C;
+    --accent:#E6ECF7; --accent-ink:#0A101C; --focus:#7FA6FF; --pkt:#FBBF24; --pkt-ink:#0A101C;
+    --ok:#4ADE80; --warn:#E6B73C; --bad:#FF7A6B;
+    --c-link:#2DD4BF; --c-net:#7FA6FF; --c-trans:#FB923C; --c-sec:#B794F6; --c-app:#4ADE80;
+    --grid:rgba(230,236,247,.05); color-scheme:dark;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#0A101C; --surface:#121A2B; --ink:#E6ECF7; --ink-2:#97A6BF; --line:#26334C;
+  --accent:#E6ECF7; --accent-ink:#0A101C; --focus:#7FA6FF; --pkt:#FBBF24; --pkt-ink:#0A101C;
+  --ok:#4ADE80; --warn:#E6B73C; --bad:#FF7A6B;
+  --c-link:#2DD4BF; --c-net:#7FA6FF; --c-trans:#FB923C; --c-sec:#B794F6; --c-app:#4ADE80;
+  --grid:rgba(230,236,247,.05); color-scheme:dark;
+}
+*{box-sizing:border-box}
+body{
+  background:var(--bg); color:var(--ink); font-family:var(--f-body); font-size:16px; line-height:1.55;
+  background-image:linear-gradient(var(--grid) 1px,transparent 1px),linear-gradient(90deg,var(--grid) 1px,transparent 1px); background-size:24px 24px;
+  padding-block:20px 56px;
+  padding-left:max(16px,env(safe-area-inset-left,0px)); padding-right:max(16px,env(safe-area-inset-right,0px));
+}
+@media (min-width:1500px){body{padding-left:max(40px,env(safe-area-inset-left,0px));padding-right:max(40px,env(safe-area-inset-right,0px))}}
+.wrap{width:100%;display:flex;flex-direction:column;gap:18px}
+h1,h2,h3,h4{font-family:var(--f-display);margin:0;text-wrap:balance;line-height:1.12}
+h1{font-size:clamp(30px,6vw,46px);font-weight:800;letter-spacing:-.01em}
+h2{font-size:clamp(24px,4.4vw,34px);font-weight:800}
+h3{font-size:19px;font-weight:600}
+h4{font-size:15px;font-weight:600}
+p{margin:0 0 10px;max-width:68ch}
+ul,ol{margin:0 0 10px;padding-left:20px;max-width:68ch}
+li{margin-bottom:5px}
+.eyebrow{font:400 12px var(--f-mono);letter-spacing:.09em;text-transform:uppercase;color:var(--ink-2);margin:0 0 6px}
+.small{font-size:13px;color:var(--ink-2)}
+.mono{font-family:var(--f-mono)}
+button{font-family:inherit}
+button:focus-visible,input:focus-visible,[tabindex]:focus-visible{outline:2px solid var(--focus);outline-offset:2px}
+
+.top{display:flex;flex-wrap:wrap;gap:14px;align-items:flex-end;justify-content:space-between}
+.top p{margin:6px 0 0;color:var(--ink-2)}
+.prog{min-width:200px;flex:0 1 260px}
+.prog .bar{height:6px;background:var(--line);border-radius:3px;overflow:hidden;margin-top:6px}
+.prog .bar i{display:block;height:100%;background:var(--ink);width:0}
+
+.levels{display:flex;gap:8px;overflow-x:auto;padding-bottom:6px;scrollbar-width:thin}
+.chip{flex:0 0 auto;display:flex;gap:8px;align-items:center;min-height:44px;padding:6px 12px 6px 8px;border:1px solid var(--line);
+  background:var(--surface);color:var(--ink);border-radius:4px;font:500 13px var(--f-body);cursor:pointer;text-align:left;border-top:3px solid var(--kc,var(--line))}
+.chip b{font:500 11px var(--f-mono);display:grid;place-items:center;min-width:26px;height:26px;padding:0 4px;border:1px solid var(--line);border-radius:13px}
+.chip.done b{background:var(--ok);border-color:var(--ok);color:var(--surface)}
+.chip[aria-current="true"]{border-color:var(--ink);background:var(--bg);box-shadow:inset 0 -3px 0 var(--ink)}
+.k-link{--kc:var(--c-link)}.k-net{--kc:var(--c-net)}.k-trans{--kc:var(--c-trans)}.k-sec{--kc:var(--c-sec)}.k-app{--kc:var(--c-app)}.k-all{--kc:var(--ink)}
+
+.panel{background:var(--surface);border:1px solid var(--line);border-radius:6px;padding:16px;min-width:0}
+.panel>.eyebrow{display:flex;justify-content:space-between;gap:8px}
+.tag{display:inline-block;font:500 11px var(--f-mono);letter-spacing:.06em;text-transform:uppercase;padding:2px 8px;border-radius:3px;color:var(--kc);border:1px solid var(--kc);background:color-mix(in srgb,var(--kc) 10%,transparent)}
+
+.about{display:grid;grid-template-columns:minmax(0,1.4fr) minmax(0,1fr);gap:20px}
+@media (max-width:900px){.about{grid-template-columns:minmax(0,1fr)}}
+.about h2{margin:6px 0 8px}
+.about .lead{font-size:17px;color:var(--ink);max-width:62ch}
+.facts{display:grid;grid-template-columns:auto minmax(0,1fr);gap:6px 14px;margin:0;font-size:14px;align-content:start}
+.facts dt{font:400 12px var(--f-mono);letter-spacing:.05em;text-transform:uppercase;color:var(--ink-2);padding-top:2px}
+.facts dd{margin:0;overflow-wrap:anywhere}
+
+.main{display:grid;grid-template-columns:minmax(0,1fr);gap:18px}
+@media (min-width:1100px){.main{grid-template-columns:minmax(0,1.05fr) minmax(0,1fr);align-items:start}.inspect{position:sticky;top:12px}}
+
+.seg{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 8px}
+.btn{font:500 13px var(--f-mono);min-height:40px;padding:6px 12px;border:1px solid var(--line);background:var(--bg);color:var(--ink);border-radius:4px;cursor:pointer}
+.btn:hover{border-color:var(--ink)}
+.btn[aria-pressed="true"]{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+.btn.primary{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+.btn.mini{min-height:32px;padding:3px 10px;font-size:12px}
+.btn.bad{border-color:var(--bad);color:var(--bad)}
+.btn.bad[aria-pressed="true"]{background:var(--bad);color:#fff}
+.btn:disabled{opacity:.45;cursor:default}
+.ctl{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:8px 0 12px}
+.ctl .grow{flex:1 1 220px;min-width:180px}
+label.cl{display:flex;justify-content:space-between;gap:8px;font:500 12px var(--f-mono);letter-spacing:.06em;text-transform:uppercase;color:var(--ink-2)}
+label.cl .cv{color:var(--ink);text-transform:none;letter-spacing:0}
+input[type=range]{width:100%;accent-color:var(--ink);height:30px;margin:0}
+.scdesc{font-size:14px;color:var(--ink-2);margin:0 0 6px;max-width:none}
+
+.diaw{overflow:auto;max-height:600px;border:1px solid var(--line);border-radius:4px;background:var(--bg);scrollbar-width:thin}
+.diaw svg{display:block}
+.diaw text{font-family:var(--f-mono)}
+.sd-name{font:600 13px var(--f-body);fill:var(--ink);font-family:var(--f-body)!important}
+.sd-sub{font-size:10.5px;fill:var(--ink-2)}
+.sd-time{font-size:10.5px;fill:var(--ink-2)}
+.sd-lab{font-size:11px;fill:var(--ink)}
+.sd-note{font-size:11px;fill:var(--ink)}
+.sd-state{font-size:10.5px;fill:var(--ink);font-weight:500}
+.sd-life{stroke:var(--line);stroke-width:1.5;stroke-dasharray:4 4}
+.sd-head{fill:var(--surface);stroke:var(--ink-2);stroke-width:1.2}
+.sd-row{cursor:pointer;outline:none}
+.sd-row .hit{fill:transparent}
+.sd-row.cur .hit{fill:color-mix(in srgb,var(--pkt) 14%,transparent)}
+.sd-row:focus-visible .hit{stroke:var(--focus);stroke-width:2}
+.sd-row.fut{opacity:.3}
+.sd-line{stroke:var(--kc,var(--ink));stroke-width:2}
+.sd-head-arrow{fill:var(--kc,var(--ink))}
+.sd-row.lostrow .sd-line{stroke:var(--bad);stroke-dasharray:5 4}
+.sd-x{stroke:var(--bad);stroke-width:3}
+.sd-box{fill:var(--surface);stroke:var(--kc,var(--ink-2));stroke-width:1.4}
+.sd-pkt{fill:var(--pkt);stroke:var(--pkt-ink);stroke-width:1.5}
+
+.stepc{margin-top:12px;border-top:1px solid var(--line);padding-top:12px}
+.stepc h3{margin:6px 0 8px}
+.stepc p{font-size:15px}
+.stepc .row{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.warnbox{margin:8px 0;padding:8px 12px;border-left:3px solid var(--bad);background:color-mix(in srgb,var(--bad) 8%,transparent);font-size:14px;max-width:none}
+.infobox{margin:8px 0;padding:8px 12px;border-left:3px solid var(--ink-2);background:color-mix(in srgb,var(--ink-2) 8%,transparent);font-size:14px;max-width:none}
+
+.inspect h3{margin-bottom:4px}
+.ins-sub{font-size:13px;color:var(--ink-2);margin:0 0 10px}
+.ovbar{display:flex;height:14px;border-radius:3px;overflow:hidden;background:var(--line);margin:6px 0 4px}
+.ovbar i{display:block;height:100%;background:var(--kc)}
+.ovleg{display:flex;flex-wrap:wrap;gap:4px 14px;font:400 11px var(--f-mono);color:var(--ink-2);margin-bottom:10px}
+.ovleg span::before{content:"";display:inline-block;width:9px;height:9px;margin-right:5px;background:var(--kc);border-radius:2px}
+.ovnote{font-size:13px;margin:0 0 10px}
+.insgrid{display:grid;grid-template-columns:minmax(0,1fr);gap:12px}
+@media (min-width:1700px){.insgrid{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}}
+.flds{max-height:360px;overflow:auto;border:1px solid var(--line);border-radius:4px;background:var(--bg);scrollbar-width:thin}
+.lh{display:flex;justify-content:space-between;gap:8px;padding:6px 10px;background:color-mix(in srgb,var(--kc) 16%,var(--bg));border-left:4px solid var(--kc);font:600 12px var(--f-body);position:sticky;top:0;z-index:1}
+.lh span:last-child{font:400 11px var(--f-mono);color:var(--ink-2)}
+.ln{font-size:12px;color:var(--ink-2);padding:4px 10px;max-width:none;margin:0}
+.fr{display:grid;grid-template-columns:minmax(0,1.1fr) minmax(0,1.3fr) minmax(0,.8fr);gap:8px;width:100%;text-align:left;border:0;border-bottom:1px solid var(--line);background:transparent;color:var(--ink);padding:5px 10px;cursor:pointer;font-size:13px}
+.fr:hover{background:color-mix(in srgb,var(--pkt) 12%,transparent)}
+.fr.on{background:color-mix(in srgb,var(--pkt) 28%,transparent)}
+.fr .fn{font-weight:500}
+.fr .fv,.fr .fx{font:400 12px var(--f-mono);overflow-wrap:anywhere}
+.fr .fx{color:var(--ink-2)}
+.fdetail{margin:10px 0;padding:10px 12px;border:1px solid var(--line);border-radius:4px;background:var(--bg);font-size:14px;max-width:none;min-height:70px}
+.fdetail b{font-family:var(--f-display)}
+.hexw{max-height:300px;overflow:auto;border:1px solid var(--line);border-radius:4px;background:var(--bg);padding:8px 10px;font:400 12px/1.7 var(--f-mono);scrollbar-width:thin}
+.hr{display:flex;gap:12px;white-space:nowrap}
+.ho{color:var(--ink-2);flex:0 0 auto}
+.hb{flex:0 0 auto;display:flex;gap:0}
+.hb .g{display:inline-flex;gap:3px;margin-right:8px}
+.ha{flex:0 0 auto;display:flex}
+.by{display:inline-block;padding:0 1px;border-radius:2px;border-bottom:2px solid var(--kc)}
+.by.on{background:var(--pkt);color:var(--pkt-ink)}
+.as{display:inline-block;width:.62em;text-align:center;border-radius:2px}
+.as.on{background:var(--pkt);color:var(--pkt-ink)}
+.nopkt{padding:18px 4px;color:var(--ink-2);font-size:15px}
+
+.extra .row{display:flex;flex-wrap:wrap;gap:14px;align-items:flex-start}
+.extra .col{flex:1 1 280px;min-width:0}
+.bigmono{font:500 28px var(--f-mono);font-variant-numeric:tabular-nums}
+.stk{display:flex;height:22px;border-radius:3px;overflow:hidden;background:var(--line);margin:8px 0 6px}
+.stk i{display:block;height:100%;background:var(--kc)}
+.leg{display:flex;flex-wrap:wrap;gap:4px 14px;font:400 12px var(--f-mono);color:var(--ink-2)}
+.leg span::before{content:"";display:inline-block;width:9px;height:9px;margin-right:5px;background:var(--kc);border-radius:2px}
+table{border-collapse:collapse;width:100%;font-size:13px}
+.tw{overflow-x:auto;margin:8px 0 12px}
+th,td{text-align:left;padding:6px 8px;border-bottom:1px solid var(--line);vertical-align:top}
+th{font:500 11px var(--f-mono);letter-spacing:.06em;text-transform:uppercase;color:var(--ink-2)}
+td.num{font-family:var(--f-mono);font-variant-numeric:tabular-nums;white-space:nowrap}
+.mbar{display:block;height:8px;background:var(--ink);border-radius:2px;min-width:2px}
+.pill{font:500 11px var(--f-mono);letter-spacing:.05em;padding:1px 8px;border-radius:3px;border:1px solid var(--st);color:var(--st);background:color-mix(in srgb,var(--st) 12%,transparent)}
+.st-ok{--st:var(--ok)}.st-warn{--st:var(--warn)}.st-bad{--st:var(--bad)}
+
+.ideas{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:16px}
+.opts{display:flex;flex-direction:column;gap:8px;margin:8px 0}
+.opt{text-align:left;min-height:44px;padding:8px 12px;border:1px solid var(--line);background:var(--bg);color:var(--ink);border-radius:4px;font:400 15px var(--f-body);cursor:pointer}
+.opt:hover{border-color:var(--ink)}
+.opt.right{border-color:var(--ok);background:color-mix(in srgb,var(--ok) 14%,transparent)}
+.opt.wrong{border-color:var(--bad);background:color-mix(in srgb,var(--bad) 12%,transparent)}
+.fb{font-size:14px;margin:6px 0 0;max-width:none}
+.q{border-top:1px solid var(--line);padding-top:14px;margin-top:14px}
+.q:first-of-type{border-top:0;margin-top:6px;padding-top:0}
+.q p.qt{font-weight:600}
+.done-banner{margin-top:14px;padding:12px;border:1px solid var(--ok);background:color-mix(in srgb,var(--ok) 12%,transparent);border-radius:4px;max-width:none}
+.stack{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 10px}
+.map{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px}
+footer{font-size:13px;color:var(--ink-2);max-width:78ch}
+</style>
+
+<div class="wrap">
+  <header class="top">
+    <div>
+      <h1>Internet Protocol Lab</h1>
+      <p>Watch how your computer reaches the internet, packet by packet, down to the individual bytes.</p>
+    </div>
+    <div class="prog" aria-live="polite">
+      <div class="small mono" id="progText">0 of 15 labs complete</div>
+      <div class="bar"><i id="progBar"></i></div>
+    </div>
+  </header>
+
+  <nav class="levels" id="nav" aria-label="Labs"></nav>
+
+  <section class="panel about" id="about"></section>
+
+  <div class="main">
+    <section class="panel stage" id="stage" aria-label="Packet exchange">
+      <p class="eyebrow"><span>Message exchange</span><span id="elapsed"></span></p>
+      <div id="scs"></div>
+      <div id="ctl"></div>
+      <div class="diaw" id="diaw"></div>
+      <div class="stepc" id="stepc" aria-live="polite"></div>
+    </section>
+    <section class="panel inspect" id="inspect" aria-label="Packet inspector"></section>
+  </div>
+
+  <section class="panel extra" id="extra" hidden></section>
+  <section class="panel" id="ideas"></section>
+  <section class="panel" id="quizp" aria-label="Checkpoint"></section>
+
+  <footer>Every packet here is built by code from the protocol rules, with real lengths and checksums, and filled with example values. Encrypted parts are shown as random-looking bytes. Progress is saved in this browser only.</footer>
+</div>
+
+<script>
+/* ===== Byte and packet builders ===== */
+(function(){
+  var PK=window.PK={};
+  PK.prng=function(seed){return function(){seed|=0;seed=seed+0x6D2B79F5|0;var t=Math.imul(seed^seed>>>15,1|seed);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296;};};
+  PK.u8=function(n){return [n&255];};
+  PK.u16=function(n){return [(n>>>8)&255,n&255];};
+  PK.u24=function(n){return [(n>>>16)&255,(n>>>8)&255,n&255];};
+  PK.u32=function(n){return [(n>>>24)&255,(n>>>16)&255,(n>>>8)&255,n&255];};
+  PK.ipb=function(s){return s.split('.').map(Number);};
+  PK.macb=function(s){return s.split(':').map(function(x){return parseInt(x,16);});};
+  PK.strb=function(s){var o=[];for(var i=0;i<s.length;i++)o.push(s.charCodeAt(i)&255);return o;};
+  PK.cat=function(){var o=[];for(var i=0;i<arguments.length;i++){var a=arguments[i];for(var j=0;j<a.length;j++)o.push(a[j]);}return o;};
+  PK.rnd=function(n,seed){var r=PK.prng(seed||7),o=[];for(var i=0;i<n;i++)o.push(Math.floor(r()*256));return o;};
+  PK.fill=function(n,v){var o=[];for(var i=0;i<n;i++)o.push(v||0);return o;};
+  PK.rep=function(s,n){var o='';while(o.length<n)o+=s;return o.slice(0,n);};
+  PK.h2=function(n){return (n<16?'0':'')+n.toString(16);};
+  PK.hex=function(n,w){var s=(n>>>0).toString(16);while(s.length<w)s='0'+s;return '0x'+s;};
+  PK.hexs=function(b,max){var o=[],m=Math.min(b.length,max||b.length);for(var i=0;i<m;i++)o.push(PK.h2(b[i]));return o.join(' ')+(b.length>m?' …':'');};
+  PK.esc=function(s){return s.replace(/\r/g,'\\r').replace(/\n/g,'\\n');};
+  PK.num=function(n){return Math.round(n).toLocaleString('en-US');};
+  PK.csum=function(b){var s=0;for(var i=0;i<b.length;i+=2){s+=(b[i]<<8)|(i+1<b.length?b[i+1]:0);}while(s>>>16)s=(s&0xffff)+(s>>>16);return (~s)&0xffff;};
+
+  /* ---- fields and layers ---- */
+  PK.F=function(n,b,v,d){return {n:n,b:b,v:(v===undefined||v===null)?null:String(v),d:d||''};};
+  PK.f8=function(n,v,d,txt){return PK.F(n,PK.u8(v),txt===undefined?v:txt,d);};
+  PK.f16=function(n,v,d,txt){return PK.F(n,PK.u16(v),txt===undefined?v:txt,d);};
+  PK.f24=function(n,v,d,txt){return PK.F(n,PK.u24(v),txt===undefined?v:txt,d);};
+  PK.f32=function(n,v,d,txt){return PK.F(n,PK.u32(v),txt===undefined?(v>>>0):txt,d);};
+  PK.fip=function(n,ip,d){return PK.F(n,PK.ipb(ip),ip,d);};
+  PK.fmac=function(n,m,d){return PK.F(n,PK.macb(m),m,d);};
+  PK.fstr=function(n,s,d,txt){return PK.F(n,PK.strb(s),txt===undefined?'"'+PK.esc(s)+'"':txt,d);};
+  PK.fraw=function(n,b,d,txt){return PK.F(n,b,txt,d);};
+  PK.L=function(name,kind,fields,note){return {name:name,k:kind,f:fields,note:note||''};};
+  PK.lbytes=function(l){var o=[];for(var i=0;i<l.f.length;i++){var b=l.f[i].b;for(var j=0;j<b.length;j++)o.push(b[j]);}return o;};
+  PK.allBytes=function(ls){var o=[];(ls||[]).forEach(function(l){var b=PK.lbytes(l);for(var j=0;j<b.length;j++)o.push(b[j]);});return o;};
+  PK.done=function(layers,meta){
+    var bytes=[],fieldAt=[],pos=0;
+    layers.forEach(function(l,li){
+      l.start=pos;
+      l.f.forEach(function(f,fi){f.off=pos;f.li=li;f.fi=fi;for(var i=0;i<f.b.length;i++){bytes.push(f.b[i]&255);fieldAt.push(li+':'+fi);}pos+=f.b.length;});
+      l.len=pos-l.start;
+    });
+    return {layers:layers,bytes:bytes,fieldAt:fieldAt,len:pos,meta:meta||{}};
+  };
+
+  /* ---- link layer ---- */
+  var ET={0x0800:'IPv4',0x0806:'ARP',0x86dd:'IPv6'};
+  PK.eth=function(src,dst,type){
+    var bc=dst.toLowerCase()==='ff:ff:ff:ff:ff:ff';
+    return PK.L('Ethernet II','link',[
+      PK.fmac('Destination MAC',dst,bc?'Broadcast address: every device on the local network receives this frame.':'Hardware address of the next device on this link. It changes at every hop.'),
+      PK.fmac('Source MAC',src,'Hardware address of the device that put this frame on the wire.'),
+      PK.F('EtherType',PK.u16(type),PK.hex(type,4)+' ('+ET[type]+')','Says what the payload is, so the receiver knows which protocol to hand it to.')
+    ],'The 4-byte frame check sequence (FCS) at the end is normally removed before capture tools show the frame.');
+  };
+  PK.arp=function(op,sha,spa,tha,tpa){
+    return PK.L('ARP','link',[
+      PK.f16('Hardware type',1,'1 means Ethernet.','1 (Ethernet)'),
+      PK.f16('Protocol type',0x0800,'The addresses being resolved are IPv4 addresses.','0x0800 (IPv4)'),
+      PK.f8('Hardware size',6,'A MAC address is 6 bytes.'),
+      PK.f8('Protocol size',4,'An IPv4 address is 4 bytes.'),
+      PK.f16('Operation',op,op===1?'1 is a request: "who has this IP?"':'2 is a reply: "I have it, here is my MAC."',op===1?'1 (request)':'2 (reply)'),
+      PK.fmac('Sender MAC',sha,'MAC address of the host sending this ARP message.'),
+      PK.fip('Sender IP',spa,'IP address of the host sending this ARP message.'),
+      PK.fmac('Target MAC',tha,op===1?'Unknown yet, so it is all zeros.':'MAC address of the host that asked.'),
+      PK.fip('Target IP',tpa,op===1?'The IP address whose owner we are looking for.':'IP address of the host that asked.')
+    ]);
+  };
+
+  /* ---- network layer ---- */
+  var PN={1:'ICMP',6:'TCP',17:'UDP'};
+  PK.ip4=function(o,payload){
+    var total=20+payload.length,ttl=o.ttl===undefined?64:o.ttl,id=o.id||0,off=o.off||0;
+    var ff=(o.df?0x4000:0)|(o.mf?0x2000:0)|(off&0x1fff);
+    var hdr=PK.cat([0x45,0],PK.u16(total),PK.u16(id),PK.u16(ff),[ttl,o.proto],[0,0],PK.ipb(o.src),PK.ipb(o.dst));
+    var cs=PK.csum(hdr);
+    var ftxt=(o.df?'DF ':'')+(o.mf?'MF ':'')+'offset '+(off*8);
+    return PK.L('IPv4','net',[
+      PK.F('Version + IHL',[0x45],'4 / 5 (20 bytes)','IP version 4. The header is 5 words of 4 bytes, so 20 bytes.'),
+      PK.F('DSCP + ECN',[0],'0','Traffic class hint. 0 means ordinary best-effort traffic.'),
+      PK.F('Total Length',PK.u16(total),total+' bytes','Size of this IP packet: header plus everything inside it.'),
+      PK.F('Identification',PK.u16(id),PK.hex(id,4),'A label shared by all fragments of one datagram, so the receiver can put them back together.'),
+      PK.F('Flags + Fragment Offset',PK.u16(ff),ftxt,'DF means "do not fragment". MF means "more fragments follow". The offset says where this piece belongs, in 8-byte units.'),
+      PK.F('TTL',[ttl],ttl+' hops','Time to live. Every router subtracts 1, and at 0 the packet is dropped. This stops packets circling forever.'),
+      PK.F('Protocol',[o.proto],o.proto+' ('+PN[o.proto]+')','Which protocol is inside this packet: 1 ICMP, 6 TCP, 17 UDP.'),
+      PK.F('Header Checksum',PK.u16(cs),PK.hex(cs,4),'Detects corruption in the header. Routers recompute it every time they change the TTL.'),
+      PK.fip('Source IP',o.src,'Address of the sender. It stays the same all the way, except when NAT rewrites it.'),
+      PK.fip('Destination IP',o.dst,'Address of the final recipient. Routers use it to choose the next hop.')
+    ]);
+  };
+  PK.icmp=function(type,code,restFields,data,names){
+    var rest=[];restFields.forEach(function(f){f.b.forEach(function(x){rest.push(x);});});
+    var all=PK.cat([type,code,0,0],rest,data),cs=PK.csum(all);
+    names=names||{};
+    return PK.L('ICMP','net',[
+      PK.F('Type',[type],type+' ('+(names.type||'')+')',names.typeDesc||'The kind of control message.'),
+      PK.F('Code',[code],code+(names.code?' ('+names.code+')':''),'A sub-type that refines the message type.'),
+      PK.F('Checksum',PK.u16(cs),PK.hex(cs,4),'Covers the whole ICMP message, header and data.')
+    ].concat(restFields).concat([PK.F('Data',data,data.length+' bytes',names.dataDesc||'Payload carried by the message.')]));
+  };
+
+  /* ---- transport layer ---- */
+  PK.udp=function(sp,dp,payload,src,dst){
+    var len=8+payload.length;
+    var cs=PK.csum(PK.cat(PK.ipb(src),PK.ipb(dst),[0,17],PK.u16(len),PK.u16(sp),PK.u16(dp),PK.u16(len),[0,0],payload));if(cs===0)cs=0xffff;
+    return PK.L('UDP','trans',[
+      PK.f16('Source Port',sp,'Port of the sending application. Often a random high number.'),
+      PK.f16('Destination Port',dp,'Port of the receiving application, such as 53 for DNS.'),
+      PK.f16('Length',len,'Header (8 bytes) plus payload.',len+' bytes'),
+      PK.F('Checksum',PK.u16(cs),PK.hex(cs,4),'Covers the UDP header, the payload, and a pseudo-header with the IP addresses.')
+    ]);
+  };
+  var FL={FIN:1,SYN:2,RST:4,PSH:8,ACK:16,URG:32};
+  PK.tcpo={
+    nop:function(){return PK.F('Option: NOP',[1],'padding','A one-byte filler that keeps the next option aligned.');},
+    mss:function(n){return PK.F('Option: MSS',[2,4].concat(PK.u16(n)),n+' bytes','Maximum segment size: the largest chunk of data this side will accept in one segment.');},
+    sackok:function(){return PK.F('Option: SACK permitted',[4,2],'yes','This side can use selective acknowledgements to report exactly which bytes arrived.');},
+    ts:function(a,b){return PK.F('Option: Timestamps',[8,10].concat(PK.u32(a),PK.u32(b)),'TSval '+a+', TSecr '+b,'Timestamps used to measure round-trip time and to protect against old duplicate segments.');},
+    ws:function(n){return PK.F('Option: Window scale',[3,3,n],'shift '+n+' (×'+(1<<n)+')','Multiplies the window field so windows larger than 65,535 bytes are possible.');},
+    sack:function(l,r){return PK.F('Option: SACK block',[5,10].concat(PK.u32(l),PK.u32(r)),'bytes '+(l>>>0)+' to '+(r>>>0),'Tells the sender which range of bytes arrived out of order, so it only resends the gap.');}
+  };
+  PK.tcp=function(o,payload,src,dst){
+    var optB=[];(o.opts||[]).forEach(function(f){f.b.forEach(function(x){optB.push(x);});});
+    var doff=(20+optB.length)/4,flags=0;
+    o.flags.split(',').forEach(function(f){flags|=FL[f];});
+    var win=o.win===undefined?64240:o.win;
+    var hdr=PK.cat(PK.u16(o.sp),PK.u16(o.dp),PK.u32(o.seq),PK.u32(o.ack),[doff<<4,flags],PK.u16(win),[0,0],[0,0],optB);
+    var cs=PK.csum(PK.cat(PK.ipb(src),PK.ipb(dst),[0,6],PK.u16(hdr.length+payload.length),hdr,payload));
+    var fs=[
+      PK.f16('Source Port',o.sp,'Port of the sending application.'),
+      PK.f16('Destination Port',o.dp,'Port of the receiving application. 80 is HTTP, 443 is HTTPS.'),
+      PK.f32('Sequence Number',o.seq,'Position of the first data byte in this segment within the sender\'s stream. A SYN or FIN also uses up one number.',(o.seq>>>0)+(o.rel!==undefined?' (relative '+o.rel+')':'')),
+      PK.f32('Acknowledgment Number',o.ack,o.flags.indexOf('ACK')>-1?'The next byte the sender of this segment expects to receive. Everything before it has arrived.':'Not used because the ACK flag is not set.',(o.ack>>>0)+(o.flags.indexOf('ACK')>-1&&o.arel!==undefined?' (relative '+o.arel+')':'')),
+      PK.F('Data Offset',[doff<<4],doff+' words ('+(doff*4)+' bytes)','Header length in 4-byte words. It is larger than 5 when options are present.'),
+      PK.F('Flags',[flags],o.flags.replace(/,/g,' '),'Control bits. SYN opens a connection, ACK acknowledges data, FIN closes, RST aborts, PSH asks to deliver now.'),
+      PK.F('Window',PK.u16(win),o.wtxt||(win+' bytes'),'How many more bytes the sender of this segment is ready to receive. This is flow control.'),
+      PK.F('Checksum',PK.u16(cs),PK.hex(cs,4),'Covers the TCP header, the data and a pseudo-header with the IP addresses.'),
+      PK.f16('Urgent Pointer',0,'Rarely used. 0 here.')
+    ];
+    (o.opts||[]).forEach(function(f){fs.push(f);});
+    return PK.L('TCP','trans',fs);
+  };
+
+  /* ---- composer: Ethernet + IPv4 + (UDP | TCP | ICMP) + app layers ---- */
+  PK.pkt=function(s){
+    var app=s.app||[],ab=PK.allBytes(app),l4,proto;
+    if(s.udp){proto=17;l4=PK.udp(s.udp.sp,s.udp.dp,ab,s.ip.src,s.ip.dst);}
+    else if(s.tcp){proto=6;l4=PK.tcp(s.tcp,ab,s.ip.src,s.ip.dst);}
+    else{proto=1;l4=s.icmp;}
+    var inner=PK.cat(PK.lbytes(l4),ab);
+    var ipo={};for(var k in s.ip)ipo[k]=s.ip[k];ipo.proto=proto;
+    var ip=PK.ip4(ipo,inner),eth=PK.eth(s.eth[0],s.eth[1],0x0800);
+    return PK.done([eth,ip,l4].concat(app),s.meta);
+  };
+
+  /* ---- TCP flow tracker: keeps sequence numbers consistent ---- */
+  PK.Flow=function(c,s,o){
+    this.c=c;this.s=s;this.o=o;
+    this.nxt={c:o.isnC>>>0,s:o.isnS>>>0};
+    this.isn={c:o.isnC>>>0,s:o.isnS>>>0};
+    this.id={c:o.idC||0x1a2b,s:o.idS||0x7c10};
+    this.ts={c:o.tsC||1823400100,s:o.tsS||903311000};
+    this.win={c:o.winC||501,s:o.winS||509};
+  };
+  PK.Flow.prototype.rel=function(who,v){return ((v>>>0)-this.isn[who])>>>0;};
+  PK.Flow.prototype.seg=function(who,flags,app,opt){
+    opt=opt||{};
+    var k=who,ko=who==='c'?'s':'c',me=this[k],other=this[ko];
+    var f=flags.split(','),syn=f.indexOf('SYN')>-1,fin=f.indexOf('FIN')>-1,hasAck=f.indexOf('ACK')>-1;
+    var ab=PK.allBytes(app||[]);
+    var seq=opt.seq!==undefined?opt.seq>>>0:this.nxt[k];
+    var ack=hasAck?(opt.ack!==undefined?opt.ack>>>0:this.nxt[ko]):0;
+    this.ts[k]+=opt.tsStep||12;
+    var opts=opt.opts;
+    if(!opts){opts=syn?[PK.tcpo.mss(1460),PK.tcpo.sackok(),PK.tcpo.ts(this.ts[k],f.indexOf('ACK')>-1?this.ts[ko]:0),PK.tcpo.nop(),PK.tcpo.ws(7)]:[PK.tcpo.nop(),PK.tcpo.nop(),PK.tcpo.ts(this.ts[k],this.ts[ko])];}
+    var win=syn?(who==='c'?64240:65160):(opt.win!==undefined?opt.win:this.win[k]);
+    var wtxt=syn?win+' bytes':win+' (×128 = '+PK.num(win*128)+' bytes)';
+    var p=PK.pkt({
+      eth:who==='c'?this.o.ethOut:this.o.ethIn,
+      ip:{src:me.ip,dst:other.ip,ttl:who==='c'?64:(opt.ttl||56),id:this.id[k]++,df:true},
+      tcp:{sp:me.port,dp:other.port,seq:seq,ack:ack,flags:flags,win:win,wtxt:wtxt,opts:opts,rel:this.rel(k,seq),arel:hasAck?this.rel(ko,ack):undefined},
+      app:app||[],meta:opt.meta
+    });
+    if(!opt.noAdvance)this.nxt[k]=(seq+ab.length+(syn?1:0)+(fin?1:0))>>>0;
+    return p;
+  };
+
+  /* ---- text protocol layer (HTTP and friends) ---- */
+  PK.textLayer=function(name,kind,startLine,headers,body,descs){
+    descs=descs||{};
+    var fs=[PK.fstr(descs.startName||'Start line',startLine+'\r\n',descs.start||'')];
+    headers.forEach(function(h){fs.push(PK.fstr('Header: '+h[0],h[0]+': '+h[1]+'\r\n',(descs.h&&descs.h[h[0]])||''));});
+    fs.push(PK.fstr('Blank line','\r\n','An empty line marks the end of the headers.'));
+    if(body)fs.push(PK.fstr('Body',body,descs.body||'The content being transferred.',PK.esc(body.length>60?body.slice(0,60)+'…':body)));
+    return PK.L(name,kind,fs);
+  };
+})();
+/* ===== Lab engine ===== */
+(function(){
+  var LAB=window.LAB={labs:[],by:{},add:function(l){LAB.labs.push(l);LAB.by[l.id]=l;}};
+  var ORDER=['journey','arp','ip','icmp','udp','tcp','dhcp','nat','dns','tls','http1','proxy','http2','quic','ws','bgp'];
+  var $=function(s){return document.querySelector(s);};
+  function esc(t){return String(t).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];});}
+  var KNAME={link:'Link layer',net:'Network layer',trans:'Transport layer',sec:'Security',app:'Application layer',all:'All layers'};
+  var reduce=false;try{reduce=window.matchMedia&&window.matchMedia('(prefers-reduced-motion: reduce)').matches;}catch(e){}
+  var store={done:[],last:'journey'};
+  try{var raw=localStorage.getItem('iplab.v1');if(raw){var p=JSON.parse(raw);if(p&&p.done)store=p;}}catch(e){}
+  function save(){try{localStorage.setItem('iplab.v1',JSON.stringify(store));}catch(e){}}
+  var ST={id:null,sc:0,i:0,rows:[],geo:null,playing:false,speed:1,rtt:40,drops:{},sel:null,raf:0,timer:0,ans:{}};
+  LAB.ST=ST;
+
+  function fmtT(ms){
+    if(ms<0.05)return '0 ms';
+    if(ms<10)return (Math.round(ms*10)/10)+' ms';
+    if(ms<1000)return Math.round(ms)+' ms';
+    var s=ms/1000;return (s<10?s.toFixed(2):s.toFixed(1)).replace(/\.?0+$/,'')+' s';
+  }
+  LAB.fmtT=fmtT;
+  function cur(){return LAB.by[ST.id];}
+  function clone(o){var r={};for(var k in o)r[k]=o[k];return r;}
+  function kc(k){return 'var(--c-'+(k&&k!=='all'?k:'x')+')';}
+  function kstyle(k){return k&&k!=='all'?'--kc:var(--c-'+k+')':'--kc:var(--ink)';}
+
+  /* ---------- rows: scenario steps plus any packets the learner chose to lose ---------- */
+  function buildRows(){
+    var L=cur(),sc=L.scenarios[ST.sc];
+    if(!sc._steps)sc._steps=sc.steps();
+    var steps=sc._steps,rows=[],stop=false,mode=L.dropMode||'retry',rto=L.rto||1000;
+    steps.forEach(function(s,k){
+      if(stop)return;
+      if(ST.drops[k]&&s.pkt&&!s.lost&&!s.note){
+        var lr=clone(s);lr.orig=k;lr.lost=true;lr.drop=true;lr.wait=s.rto||rto;rows.push(lr);
+        if(mode==='retry'){var rr=clone(s);rr.orig=k;rr.retry=true;rows.push(rr);}
+        else if(mode==='stop'){rows.push({note:true,f:s.f,t:s.f,orig:k,k:s.k,label:'no reply',title:'Nothing comes back',text:L.dropNote,tail:true});stop=true;}
+      }else{var r=clone(s);r.orig=k;rows.push(r);}
+    });
+    ST.rows=rows;timeRows();
+  }
+  function timeRows(){
+    var L=cur(),t=0;
+    ST.rows.forEach(function(r){
+      var d=0;
+      if(r.drop)d=r.wait;
+      else if(!r.note&&!r.lost){var h=r.hop!==undefined?r.hop:(L.hop===undefined?1:L.hop);d=(h==='lan')?0.4:h*ST.rtt/2;d+=r.extraWait||0;}
+      r.dt=d;t+=d;r.at=t;
+    });
+  }
+  function total(){return ST.rows.length?ST.rows[ST.rows.length-1].at:0;}
+  function stateAt(i){
+    var sc=cur().scenarios[ST.sc],o={};
+    var s0=sc.st0||{};for(var k in s0)o[k]=s0[k];
+    for(var j=0;j<=i&&j<ST.rows.length;j++){var st=ST.rows[j].st;if(st)for(var q in st)o[q]=st[q];}
+    return o;
+  }
+
+  /* ---------- navigation and header ---------- */
+  function renderNav(){
+    $('#nav').innerHTML=ORDER.map(function(id,n){
+      var L=LAB.by[id];if(!L)return '';
+      var d=store.done.indexOf(id)>-1;
+      return '<button class="chip k-'+L.kind+(d?' done':'')+'" data-a="lab" data-v="'+id+'" aria-current="'+(id===ST.id)+'"><b>'+(d?'✓':n)+'</b><span>'+esc(L.n)+'</span></button>';
+    }).join('');
+    $('#progText').textContent=store.done.length+' of '+ORDER.length+' labs complete';
+    $('#progBar').style.width=(store.done.length/ORDER.length*100)+'%';
+  }
+  function renderAbout(){
+    var L=cur();
+    var facts=L.facts.map(function(f){return '<dt>'+esc(f[0])+'</dt><dd>'+esc(f[1])+'</dd>';}).join('');
+    $('#about').innerHTML='<div class="k-'+L.kind+'"><span class="tag">'+KNAME[L.kind]+'</span><h2>'+esc(L.name)+'</h2><p class="lead">'+L.tagline+'</p><p>'+L.why+'</p></div><dl class="facts">'+facts+'</dl>';
+    $('#ideas').innerHTML='<p class="eyebrow">What to remember</p><div class="ideas">'+L.ideas.map(function(g){return '<div><h4>'+esc(g[0])+'</h4><p>'+g[1]+'</p></div>';}).join('')+'</div>';
+  }
+
+  /* ---------- controls ---------- */
+  function renderScenarios(){
+    var L=cur(),h='';
+    if(L.scenarios.length>1){
+      h+='<div class="seg" role="group" aria-label="Scenario">'+L.scenarios.map(function(s,i){return '<button class="btn" data-a="sc" data-v="'+i+'" aria-pressed="'+(i===ST.sc)+'">'+esc(s.l)+'</button>';}).join('')+'</div>';
+    }
+    h+='<p class="scdesc">'+L.scenarios[ST.sc].d+'</p>';
+    $('#scs').innerHTML=h;
+  }
+  function renderCtl(){
+    var L=cur();
+    var h='<div class="ctl"><button class="btn" data-a="restart">Restart</button><button class="btn" data-a="prev" id="bPrev">Back</button><button class="btn primary" data-a="play" id="bPlay">Play</button><button class="btn" data-a="next" id="bNext">Next</button>'+
+      '<span class="seg" style="margin:0 0 0 6px" role="group" aria-label="Speed">'+[0.5,1,2].map(function(v){return '<button class="btn mini" data-a="speed" data-v="'+v+'" aria-pressed="'+(ST.speed===v)+'">'+v+'×</button>';}).join('')+'</span></div>';
+    if(!L.lan){
+      h+='<div class="ctl"><div class="grow"><label class="cl" for="rtt"><span>Round-trip time to the server</span><span class="cv" id="rttV">'+ST.rtt+' ms</span></label><input type="range" id="rtt" min="1" max="600" step="1" value="'+ST.rtt+'"></div></div>';
+    }else{
+      h+='<p class="small">Local network exchange: each hop takes well under a millisecond.</p>';
+    }
+    $('#ctl').innerHTML=h;
+    updCtl();
+  }
+  function updCtl(){
+    var b=$('#bPlay');if(b)b.textContent=ST.playing?'Pause':'Play';
+    var pv=$('#bPrev');if(pv)pv.disabled=ST.i<=0;
+    var nx=$('#bNext');if(nx)nx.disabled=ST.i>=ST.rows.length-1;
+    Array.prototype.forEach.call(document.querySelectorAll('[data-a="speed"]'),function(e){e.setAttribute('aria-pressed',String(Number(e.getAttribute('data-v'))===ST.speed));});
+    $('#elapsed').textContent=ST.rows.length?'t = '+fmtT(ST.rows[ST.i].at)+' of '+fmtT(total()):'';
+  }
+
+  /* ---------- sequence diagram ---------- */
+  function trunc(s,n){s=String(s);return s.length>n?s.slice(0,Math.max(1,n-1))+'…':s;}
+  function wrap(s,n){
+    var w=String(s).split(' '),lines=[],c='';
+    w.forEach(function(x){if((c+' '+x).trim().length>n&&c){lines.push(c);c=x;}else c=(c+' '+x).trim();});
+    if(c)lines.push(c);
+    if(lines.length>2){lines=lines.slice(0,2);lines[1]=trunc(lines[1]+'…',n);}
+    return lines;
+  }
+  function diagram(){
+    var L=cur(),sc=L.scenarios[ST.sc],rows=ST.rows,A=sc.actors,n=A.length;
+    var left=78,W=Math.max(600,left+n*150),sp=(W-left)/n,top=86,rh=60,H=top+rows.length*rh+14;
+    function ax(i){return left+sp*(i+0.5);}
+    ST.geo={left:left,W:W,sp:sp,top:top,rh:rh,ax:A.map(function(a,i){return ax(i);})};
+    var states=stateAt(ST.i);
+    var s='<svg id="sd" viewBox="0 0 '+W+' '+H+'" style="width:100%;min-width:'+W+'px;height:auto" role="group" aria-label="Sequence diagram of the exchange">';
+    s+='<text class="sd-sub" x="'+(left-10)+'" y="30" text-anchor="end">elapsed</text>';
+    A.forEach(function(a,i){
+      s+='<line class="sd-life" x1="'+ax(i)+'" y1="78" x2="'+ax(i)+'" y2="'+(H-6)+'"/>';
+      s+='<rect class="sd-head" x="'+(ax(i)-62)+'" y="6" width="124" height="48" rx="5"/>';
+      s+='<text class="sd-name" x="'+ax(i)+'" y="26" text-anchor="middle">'+esc(trunc(a.n,16))+'</text>';
+      s+='<text class="sd-sub" x="'+ax(i)+'" y="43" text-anchor="middle">'+esc(trunc(a.s||'',19))+'</text>';
+      if(states[i])s+='<text class="sd-state" x="'+ax(i)+'" y="70" text-anchor="middle">'+esc(trunc(states[i],20))+'</text>';
+    });
+    rows.forEach(function(r,j){
+      var y0=top+j*rh,y=y0+36,cls='sd-row'+(j===ST.i?' cur':'')+(j>ST.i?' fut':'')+(r.lost?' lostrow':'');
+      var who=r.note?A[r.f].n+': '+r.label:A[r.f].n+' to '+A[r.t].n+': '+r.label+(r.lost?' (lost)':'');
+      s+='<g class="'+cls+'" data-a="row" data-r="'+j+'" tabindex="0" role="button" aria-label="Step '+(j+1)+', '+esc(who)+'" style="'+kstyle(r.k||L.kind)+'"><rect class="hit" x="0" y="'+y0+'" width="'+W+'" height="'+rh+'"/>';
+      s+='<text class="sd-time" x="'+(left-10)+'" y="'+(y+4)+'" text-anchor="end">'+(j===0&&r.at===0?'0':'+'+esc(fmtT(r.at)))+'</text>';
+      if(r.note){
+        var bw=Math.min(sp*1.5,210),lines=wrap(r.label,Math.floor(bw/6.5)),bh=lines.length>1?40:26,x=ax(r.f)-bw/2;
+        s+='<rect class="sd-box" x="'+x+'" y="'+(y0+(rh-bh)/2)+'" width="'+bw+'" height="'+bh+'" rx="5"/>';
+        lines.forEach(function(ln,q){s+='<text class="sd-note" x="'+ax(r.f)+'" y="'+(y0+(rh-bh)/2+(lines.length>1?16:17)+q*14)+'" text-anchor="middle">'+esc(ln)+'</text>';});
+      }else{
+        var x1=ax(r.f),x2=ax(r.t),sg=x2>x1?1:-1,dx=Math.abs(x2-x1),endx=r.lost?x1+(x2-x1)*0.62:x2;
+        s+='<line class="sd-line" x1="'+(x1+sg*5)+'" y1="'+y+'" x2="'+(r.lost?endx:x2-sg*8)+'" y2="'+y+'"/>';
+        s+='<circle cx="'+x1+'" cy="'+y+'" r="3.5" fill="'+(r.lost?'var(--bad)':'var(--kc)')+'"/>';
+        if(r.lost){s+='<path class="sd-x" d="M'+(endx-6)+' '+(y-6)+'L'+(endx+6)+' '+(y+6)+'M'+(endx+6)+' '+(y-6)+'L'+(endx-6)+' '+(y+6)+'"/>';}
+        else s+='<polygon class="sd-head-arrow" points="'+x2+','+y+' '+(x2-sg*10)+','+(y-5)+' '+(x2-sg*10)+','+(y+5)+'"/>';
+        var lab=(r.lost?'lost: ':'')+r.label;
+        s+='<text class="sd-lab" x="'+((x1+x2)/2)+'" y="'+(y-9)+'" text-anchor="middle">'+esc(trunc(lab,Math.max(6,Math.floor((dx-10)/6.6))))+'</text>';
+      }
+      s+='</g>';
+    });
+    var cr=rows[ST.i];
+    if(cr&&!cr.note){
+      var cy=top+ST.i*rh+36,cx=ST.geo.ax[cr.t];
+      if(cr.lost)cx=ST.geo.ax[cr.f]+(ST.geo.ax[cr.t]-ST.geo.ax[cr.f])*0.62;
+      s+='<circle id="dot" class="sd-pkt" cx="'+cx+'" cy="'+cy+'" r="7"/>';
+    }
+    return s+'</svg>';
+  }
+  function renderDiagram(keepScroll){
+    var w=$('#diaw'),st=w.scrollTop;
+    w.innerHTML=diagram();
+    if(keepScroll){w.scrollTop=st;}
+    var g=ST.geo,yc=g.top+ST.i*g.rh;
+    if(yc<w.scrollTop+20||yc+g.rh>w.scrollTop+w.clientHeight-10){w.scrollTop=Math.max(0,yc-w.clientHeight/2+g.rh/2);}
+  }
+
+  /* ---------- animation ---------- */
+  function stopAnim(){if(ST.raf){cancelAnimationFrame(ST.raf);ST.raf=0;}if(ST.timer){clearTimeout(ST.timer);ST.timer=0;}}
+  function settled(){
+    ST.timer=0;
+    if(ST.playing){
+      if(ST.i<ST.rows.length-1){ST.timer=setTimeout(function(){go(ST.i+1,true);},420/ST.speed);}
+      else{ST.playing=false;updCtl();}
+    }
+  }
+  function go(i,anim){
+    stopAnim();
+    ST.i=Math.max(0,Math.min(ST.rows.length-1,i));
+    ST.sel=null;
+    renderStage();
+    var r=ST.rows[ST.i];
+    if(!anim||reduce){settled();return;}
+    if(r.note){ST.timer=setTimeout(settled,520/ST.speed);return;}
+    var g=ST.geo,x1=g.ax[r.f],x2=g.ax[r.t],end=r.lost?0.62:1,dur=850/ST.speed,t0=performance.now();
+    function frame(now){
+      var d=$('#dot');if(!d){ST.raf=0;return;}
+      var p=Math.min(1,(now-t0)/dur),e=p<0.5?2*p*p:1-Math.pow(-2*p+2,2)/2;
+      d.setAttribute('cx',x1+(x2-x1)*end*e);
+      if(p<1)ST.raf=requestAnimationFrame(frame);else{ST.raf=0;settled();}
+    }
+    var d0=$('#dot');if(d0)d0.setAttribute('cx',x1);
+    ST.raf=requestAnimationFrame(frame);
+  }
+  function setPlaying(v){ST.playing=v;updCtl();}
+
+  /* ---------- step card ---------- */
+  function renderStepCard(){
+    var L=cur(),sc=L.scenarios[ST.sc],r=ST.rows[ST.i],A=sc.actors;
+    if(!r){$('#stepc').innerHTML='';return;}
+    var route=r.note?A[r.f].n+' (local action)':A[r.f].n+' to '+A[r.t].n;
+    var h='<p class="eyebrow"><span>Step '+(ST.i+1)+' of '+ST.rows.length+' · '+esc(route)+'</span><span></span></p><h3>'+esc(r.title||r.label)+'</h3><p>'+(r.text||'')+'</p>';
+    if(r.drop)h+='<div class="warnbox"><b>This packet is lost on the way.</b> '+L.dropNote+'</div>';
+    else if(r.retry)h+='<div class="infobox"><b>Retransmission.</b> The sender noticed nothing came back and sent the same packet again. Compare the elapsed time with the step before.</div>';
+    else if(r.lost)h+='<div class="warnbox"><b>This packet is lost on the way.</b> '+(r.lostText||L.dropNote)+'</div>';
+    if(r.pkt&&!r.lost||r.drop||r.retry){
+      var d=!!ST.drops[r.orig];
+      if(r.pkt&&!r.note&&L.dropMode!=='none')h+='<div class="row"><button class="btn mini bad" data-a="drop" data-v="'+r.orig+'" aria-pressed="'+d+'">'+(d?'Deliver this packet normally':'Lose this packet')+'</button><span class="small">Try it: see what the protocol does when this packet never arrives.</span></div>';
+    }
+    $('#stepc').innerHTML=h;
+  }
+
+  /* ---------- packet inspector ---------- */
+  function renderInspect(){
+    var r=ST.rows[ST.i],el=$('#inspect');
+    if(!r||!r.pkt){
+      el.innerHTML='<p class="eyebrow"><span>Packet inspector</span><span></span></p><h3>No packet in this step</h3><p class="nopkt">'+(r&&r.note?'This step is something a computer does by itself, so nothing is sent on the wire. Step to a message arrow to inspect its bytes.':'Select a message arrow to inspect its bytes.')+'</p>';
+      return;
+    }
+    var p=r.pkt,ov=0,legend='',bar='';
+    p.layers.forEach(function(l){
+      bar+='<i style="width:'+(l.len/p.len*100).toFixed(2)+'%;'+kstyle(l.k)+'" title="'+esc(l.name)+' '+l.len+' bytes"></i>';
+      legend+='<span style="'+kstyle(l.k)+'">'+esc(l.name)+' '+PK.num(l.len)+'</span>';
+      if(l.k==='link'||l.k==='net'||l.k==='trans')ov+=l.len;
+    });
+    var h='<p class="eyebrow"><span>Packet inspector</span><span>'+PK.num(p.len)+' bytes</span></p><h3>'+esc(r.label)+(r.lost?' (lost)':'')+'</h3>';
+    h+='<p class="ins-sub">Frame as it appears on the wire. Hover or tap any field or byte to see what it means.</p>';
+    if(p.meta&&p.meta.banner)h+='<div class="infobox">'+p.meta.banner+'</div>';
+    h+='<div class="ovbar" role="img" aria-label="Bytes per layer">'+bar+'</div><div class="ovleg">'+legend+'</div>';
+    h+='<p class="ovnote">Ethernet, IP and transport headers use <b>'+PK.num(ov)+' of '+PK.num(p.len)+' bytes</b> ('+Math.round(ov/p.len*100)+'%).'+(ov===p.len?' There is no payload here: this packet only carries control information.':'')+'</p>';
+    h+='<div class="insgrid"><div><div class="flds" id="flds">';
+    p.layers.forEach(function(l,li){
+      h+='<div class="lh k-'+l.k+'"><span>'+esc(l.name)+'</span><span>bytes '+l.start+' to '+(l.start+l.len-1)+' · '+PK.num(l.len)+' B</span></div>';
+      if(l.note)h+='<p class="ln">'+esc(l.note)+'</p>';
+      l.f.forEach(function(f,fi){
+        var key=li+':'+fi,val=f.v!==null?f.v:PK.hexs(f.b,8);
+        h+='<button class="fr k-'+l.k+'" data-a="f" data-f="'+key+'"><span class="fn">'+esc(f.n)+'</span><span class="fv">'+esc(val.length>90?val.slice(0,90)+'…':val)+'</span><span class="fx">'+esc(PK.hexs(f.b,5))+'</span></button>';
+      });
+    });
+    h+='</div><div class="fdetail" id="fdetail">Select a field to see what it means and which bytes it occupies.</div></div>';
+    h+='<div><div class="hexw" id="hexw">'+hexHtml(p)+'</div></div></div>';
+    el.innerHTML=h;
+  }
+  function hexHtml(p){
+    var b=p.bytes,n=b.length,out='';
+    for(var o=0;o<n;o+=16){
+      var hb='',as='';
+      for(var j=0;j<16&&o+j<n;j++){
+        var idx=o+j,fk=p.fieldAt[idx],kind=p.layers[+fk.split(':')[0]].k,c=b[idx];
+        hb+='<span class="by k-'+kind+'" data-a="f" data-f="'+fk+'" style="margin-right:'+(j===7?'12':'4')+'px">'+PK.h2(c)+'</span>';
+        as+='<span class="as" data-a="f" data-f="'+fk+'">'+esc(c>=32&&c<127?String.fromCharCode(c):'.')+'</span>';
+      }
+      out+='<div class="hr"><span class="ho">'+PK.hex(o,4).slice(2)+'</span><span class="hb">'+hb+'</span><span class="ha">'+as+'</span></div>';
+    }
+    return out;
+  }
+  function selectField(key){
+    if(ST.sel===key)return;
+    var root=$('#inspect');if(!root)return;
+    Array.prototype.forEach.call(root.querySelectorAll('.on'),function(e){e.classList.remove('on');});
+    ST.sel=key;
+    var nodes=root.querySelectorAll('[data-f="'+key+'"]');
+    Array.prototype.forEach.call(nodes,function(e){e.classList.add('on');});
+    var r=ST.rows[ST.i],pr=r&&r.pkt;if(!pr)return;
+    var q=key.split(':'),l=pr.layers[+q[0]],f=l.f[+q[1]];
+    var val=f.v!==null?f.v:PK.hexs(f.b,16);
+    $('#fdetail').innerHTML='<b>'+esc(f.n)+'</b> <span class="small">in '+esc(l.name)+'</span><br><span class="mono">'+esc(val.length>200?val.slice(0,200)+'…':val)+'</span><br>'+esc(f.d||'')+'<br><span class="small">'+f.b.length+(f.b.length===1?' byte':' bytes')+' at offset '+f.off+'</span>';
+    var hw=$('#hexw'),first=hw&&hw.querySelector('.by[data-f="'+key+'"]');
+    if(first&&hw){var top=first.offsetTop;if(top<hw.scrollTop||top>hw.scrollTop+hw.clientHeight-30)hw.scrollTop=Math.max(0,top-hw.clientHeight/3);}
+  }
+
+  function renderStage(){
+    renderDiagram(true);renderStepCard();renderInspect();updCtl();
+  }
+
+  /* ---------- quiz ---------- */
+  function renderQuiz(){
+    var L=cur(),A=ST.ans[L.id]||(ST.ans[L.id]={}),right=0;
+    var h='<p class="eyebrow"><span>Checkpoint</span><span id="qcount"></span></p>';
+    h+=L.quiz.map(function(q,qi){
+      var sel=A[qi],ok=sel===q.a;if(ok)right++;
+      var o=q.o.map(function(t,oi){var cls='opt';if(sel===oi)cls+=ok?' right':' wrong';return '<button class="'+cls+'" data-a="ans" data-q="'+qi+'" data-o="'+oi+'" '+(ok?'disabled':'')+'>'+esc(t)+'</button>';}).join('');
+      var fb=sel===undefined?'':ok?'<p class="fb">'+esc(q.x)+'</p>':'<p class="fb">Not quite. '+esc(q.h)+'</p>';
+      return '<div class="q"><p class="qt">'+(qi+1)+'. '+esc(q.q)+'</p><div class="opts">'+o+'</div>'+fb+'</div>';
+    }).join('');
+    var complete=right===L.quiz.length;
+    if(complete&&store.done.indexOf(L.id)<0){store.done.push(L.id);save();renderNav();}
+    var idx=ORDER.indexOf(L.id),next=LAB.by[ORDER[idx+1]];
+    if(complete)h+='<div class="done-banner"><b>'+esc(L.n)+' lab complete.</b> '+(next?'Next up: '+esc(next.name)+'.':'You have finished every lab.')+(next?'<div class="stack" style="margin-top:8px"><button class="btn primary" data-a="lab" data-v="'+next.id+'">Go to '+esc(next.n)+'</button></div>':'')+'</div>';
+    $('#quizp').innerHTML=h;
+    $('#qcount').textContent=right+' of '+L.quiz.length+' correct';
+  }
+
+  /* ---------- lab switching ---------- */
+  function setLab(id,keepHash){
+    stopAnim();ST.playing=false;
+    ST.id=id;ST.sc=0;ST.i=0;ST.drops={};ST.sel=null;store.last=id;save();
+    try{history.replaceState(null,'','#'+id);}catch(e){}
+    renderNav();renderAbout();renderScenarios();renderCtl();buildRows();renderStage();renderQuiz();renderExtra();
+    var e=$('#nav');if(e&&e.scrollIntoView&&ST.booted)e.scrollIntoView({block:'start',behavior:'auto'});
+  }
+  function setScenario(i){
+    stopAnim();ST.playing=false;ST.sc=i;ST.i=0;ST.drops={};ST.sel=null;
+    renderScenarios();renderCtl();buildRows();renderStage();
+  }
+
+  /* ---------- extras ---------- */
+  var BUD={dns:'resolver',proto:'tls13',reuse:false};
+  var TW={bw:200,win:200};
+  function budCalc(o,r){
+    var dns=o.dns==='cached'?0:o.dns==='resolver'?10:10+2*r,segs=[];
+    segs.push({n:'DNS lookup',ms:dns,k:'app'});
+    if(!o.reuse){
+      if(o.proto==='tls12'){segs.push({n:'TCP handshake',ms:r,k:'trans'});segs.push({n:'TLS 1.2 handshake',ms:2*r,k:'sec'});}
+      else if(o.proto==='tls13'){segs.push({n:'TCP handshake',ms:r,k:'trans'});segs.push({n:'TLS 1.3 handshake',ms:r,k:'sec'});}
+      else if(o.proto==='quic'){segs.push({n:'QUIC handshake',ms:r,k:'sec'});}
+    }
+    segs.push({n:'Request and response',ms:r+20,k:'link'});
+    var t=0;segs.forEach(function(s){t+=s.ms;});
+    return {segs:segs,total:t};
+  }
+  var PROTOS=[['tls12','TCP + TLS 1.2'],['tls13','TCP + TLS 1.3'],['quic','HTTP/3 over QUIC'],['quic0','QUIC with 0-RTT resumption']];
+  function renderBudget(){
+    var el=$('#extra'),r=ST.rtt,c=budCalc(BUD,r);
+    function sg(g,opts){return '<div class="seg" role="group">'+opts.map(function(o){return '<button class="btn mini" data-a="bud" data-g="'+g+'" data-v="'+o[0]+'" aria-pressed="'+(String(BUD[g])===String(o[0]))+'">'+o[1]+'</button>';}).join('')+'</div>';}
+    var segHtml=c.segs.map(function(s){return '<i style="width:'+(s.ms/c.total*100).toFixed(2)+'%;'+kstyle(s.k)+'" title="'+esc(s.n)+'"></i>';}).join('');
+    var leg=c.segs.map(function(s){return '<span style="'+kstyle(s.k)+'">'+esc(s.n)+' '+fmtT(s.ms)+'</span>';}).join('');
+    var rows=PROTOS.map(function(p){
+      var o={dns:BUD.dns,proto:p[0]==='quic0'?'quic':p[0],reuse:BUD.reuse},cc=budCalc(o,r);
+      if(p[0]==='quic0'&&!BUD.reuse){cc.segs=cc.segs.filter(function(s){return s.n!=='QUIC handshake';});cc.total-=r;}
+      return {n:p[1],t:cc.total};
+    });
+    var mx=Math.max.apply(null,rows.map(function(x){return x.t;}));
+    el.hidden=false;
+    el.innerHTML='<p class="eyebrow"><span>Latency budget</span><span>RTT '+ST.rtt+' ms</span></p><h3>How long until the first byte of a page arrives?</h3>'+
+      '<p class="small">Every handshake costs a round trip. Change the choices and the round-trip time above to see where the time goes. Assumes a resolver 10 ms away, a cold lookup that adds two trips to the internet, and 20 ms of server think time.</p>'+
+      '<div class="row"><div class="col"><label class="cl"><span>DNS</span></label>'+sg('dns',[['cached','Cached on device'],['resolver','Resolver cache hit'],['cold','Cold lookup']])+
+      '<label class="cl"><span>Connection</span></label>'+sg('proto',[['tls12','TCP + TLS 1.2'],['tls13','TCP + TLS 1.3'],['quic','QUIC']])+
+      '<label class="cl"><span>Connection reuse</span></label>'+sg('reuse',[['false','New connection'],['true','Reused (keep-alive)']])+'</div>'+
+      '<div class="col"><div class="bigmono">'+fmtT(c.total)+'</div><div class="stk" role="img" aria-label="Time breakdown">'+segHtml+'</div><div class="leg">'+leg+'</div></div></div>'+
+      '<div class="tw"><table><thead><tr><th>Same page, other choices</th><th>Time</th><th style="width:40%"></th></tr></thead><tbody>'+rows.map(function(x){return '<tr><td>'+esc(x.n)+'</td><td class="num">'+fmtT(x.t)+'</td><td><span class="mbar" style="width:'+(x.t/mx*100).toFixed(1)+'%"></span></td></tr>';}).join('')+'</tbody></table></div>'+
+      '<p class="small">This is why content delivery networks move servers close to users (smaller RTT) and why newer protocols cut round trips.</p>';
+  }
+  function fmtBits(b){if(b>=1e9)return (b/1e9).toFixed(2).replace(/\.?0+$/,'')+' Gbit/s';if(b>=1e6)return (b/1e6).toFixed(1).replace(/\.0$/,'')+' Mbit/s';return Math.round(b/1e3)+' kbit/s';}
+  function fmtBytes(n){if(n>=1048576)return (n/1048576).toFixed(1).replace(/\.0$/,'')+' MB';if(n>=1024)return Math.round(n/1024)+' KB';return Math.round(n)+' B';}
+  function twCalc(){
+    var bw=Math.pow(10,TW.bw/100)*1e6,win=Math.pow(10,TW.win/100)*1024,rt=ST.rtt/1000;
+    var byWin=win*8/rt,thr=Math.min(bw,byWin),bdp=bw*rt/8;
+    return {bw:bw,win:win,byWin:byWin,thr:thr,bdp:bdp,limited:byWin<bw};
+  }
+  function renderTcpWin(){
+    var el=$('#extra'),c=twCalc();
+    el.hidden=false;
+    el.innerHTML='<p class="eyebrow"><span>Throughput calculator</span><span>RTT '+ST.rtt+' ms</span></p><h3>Why a fast link can still download slowly</h3>'+
+      '<p class="small">A TCP sender may only have one window of unacknowledged data in flight. Per round trip it can send at most one window, so throughput is capped at window ÷ round-trip time. To fill the link, the window must be at least the bandwidth-delay product.</p>'+
+      '<div class="row"><div class="col"><label class="cl" for="twbw"><span>Link bandwidth</span><span class="cv" id="twbwV">'+fmtBits(c.bw)+'</span></label><input type="range" id="twbw" min="0" max="400" value="'+TW.bw+'">'+
+      '<label class="cl" for="twwin"><span>Receive window</span><span class="cv" id="twwinV">'+fmtBytes(c.win)+'</span></label><input type="range" id="twwin" min="100" max="450" value="'+TW.win+'">'+
+      '<div class="seg" style="margin-top:8px"><button class="btn mini" data-a="twp" data-v="940,10">Home fibre, 10 ms</button><button class="btn mini" data-a="twp" data-v="1000,70">Cross-country, 70 ms</button><button class="btn mini" data-a="twp" data-v="50,600">Satellite, 600 ms</button></div></div>'+
+      '<div class="col"><div class="bigmono" id="twthr">'+fmtBits(c.thr)+'</div><p class="small" id="twtxt"></p></div></div>';
+    twText();
+  }
+  function twText(){
+    var c=twCalc();
+    var e=$('#twthr');if(e)e.textContent=fmtBits(c.thr);
+    var t=$('#twtxt');
+    if(t)t.innerHTML='<span class="pill st-'+(c.limited?'bad':'ok')+'">'+(c.limited?'WINDOW-LIMITED':'BANDWIDTH-LIMITED')+'</span><br>Bandwidth-delay product: <b>'+fmtBytes(c.bdp)+'</b> in flight needed to fill the link. Window allows <b>'+fmtBits(c.byWin)+'</b>.'+(c.limited?' A bigger window, or a shorter round trip, would speed this up.':' The link itself is the limit now.');
+    var a=$('#twbwV');if(a)a.textContent=fmtBits(c.bw);var b=$('#twwinV');if(b)b.textContent=fmtBytes(c.win);
+  }
+  function renderExtra(){
+    var L=cur(),el=$('#extra');
+    if(L.extra==='budget')renderBudget();
+    else if(L.extra==='tcpwin')renderTcpWin();
+    else{el.hidden=true;el.innerHTML='';}
+  }
+
+  /* ---------- events ---------- */
+  document.addEventListener('click',function(e){
+    var t=e.target.closest('[data-a]');if(!t)return;
+    var a=t.getAttribute('data-a'),v=t.getAttribute('data-v');
+    if(a==='lab'){setLab(v);}
+    else if(a==='sc'){setScenario(Number(v));}
+    else if(a==='row'){setPlaying(false);stopAnim();go(Number(t.getAttribute('data-r')),false);}
+    else if(a==='next'){setPlaying(false);go(ST.i+1,true);}
+    else if(a==='prev'){setPlaying(false);go(ST.i-1,false);}
+    else if(a==='restart'){setPlaying(false);go(0,false);}
+    else if(a==='play'){
+      if(ST.playing){setPlaying(false);stopAnim();}
+      else{setPlaying(true);if(ST.i>=ST.rows.length-1){go(0,true);}else{go(ST.i+1,true);}}
+    }
+    else if(a==='speed'){ST.speed=Number(v);updCtl();}
+    else if(a==='drop'){var o=Number(v);if(ST.drops[o])delete ST.drops[o];else ST.drops[o]=true;setPlaying(false);stopAnim();var at=ST.i;buildRows();ST.i=Math.min(at,ST.rows.length-1);renderStage();}
+    else if(a==='f'){selectField(t.getAttribute('data-f'));}
+    else if(a==='ans'){var L=cur();(ST.ans[L.id]||(ST.ans[L.id]={}))[t.getAttribute('data-q')]=Number(t.getAttribute('data-o'));renderQuiz();}
+    else if(a==='bud'){var g=t.getAttribute('data-g');BUD[g]=g==='reuse'?(v==='true'):v;renderBudget();}
+    else if(a==='twp'){var q=v.split(',');TW.bw=Math.round(Math.log10(Number(q[0]))*100);ST.rtt=Number(q[1]);syncRtt();renderTcpWin();}
+  });
+  document.addEventListener('mouseover',function(e){
+    var t=e.target.closest&&e.target.closest('#inspect [data-f]');if(t)selectField(t.getAttribute('data-f'));
+  });
+  function syncRtt(){
+    var s=$('#rtt');if(s)s.value=ST.rtt;var v=$('#rttV');if(v)v.textContent=ST.rtt+' ms';
+    timeRows();renderDiagram(true);updCtl();
+    var L=cur();if(L.extra==='budget')renderBudget();else if(L.extra==='tcpwin')twText();
+  }
+  document.addEventListener('input',function(e){
+    var id=e.target.id;
+    if(id==='rtt'){ST.rtt=Number(e.target.value);syncRtt();}
+    else if(id==='twbw'){TW.bw=Number(e.target.value);twText();}
+    else if(id==='twwin'){TW.win=Number(e.target.value);twText();}
+  });
+  document.addEventListener('keydown',function(e){
+    var t=e.target;
+    if(t&&t.getAttribute&&t.getAttribute('data-a')==='row'&&(e.key==='Enter'||e.key===' ')){e.preventDefault();t.dispatchEvent(new MouseEvent('click',{bubbles:true}));return;}
+    var tag=t&&t.tagName;if(tag==='INPUT'||tag==='TEXTAREA'||tag==='SELECT')return;
+    if(e.key==='ArrowRight'){setPlaying(false);go(ST.i+1,true);}
+    else if(e.key==='ArrowLeft'){setPlaying(false);go(ST.i-1,false);}
+  });
+
+  LAB.boot=function(){
+    var h=(location.hash||'').replace('#','');
+    var id=LAB.by[h]?h:(LAB.by[store.last]?store.last:'journey');
+    setLab(id);ST.booted=true;
+  };
+})();
+/* ===== Shared hosts and builders for the labs ===== */
+(function(){
+  var H=window.H={
+    lap:'192.168.1.23',lapMac:'3c:22:fb:4a:91:0e',rtr:'192.168.1.1',rtrMac:'9c:3d:cf:0b:7e:42',rtrWanMac:'9c:3d:cf:0b:7e:43',
+    wan:'203.0.113.45',res:'1.1.1.1',root:'198.41.0.4',tld:'192.5.6.30',ns:'199.43.135.53',web:'93.184.216.34',bc:'ff:ff:ff:ff:ff:ff',
+    ispMac:'00:1b:54:c2:19:f0',isp2Mac:'00:1b:54:c2:19:f1',bbMac:'2c:6b:f5:88:3e:10',bb2Mac:'2c:6b:f5:88:3e:11',srvMac:'0a:58:5d:b7:41:c2'
+  };
+  H.out=[H.lapMac,H.rtrMac];H.in=[H.rtrMac,H.lapMac];
+  H.S=function(f,t,label,title,text,pkt,o){var s={f:f,t:t,label:label,title:title,text:text,pkt:pkt};if(o)for(var k in o)s[k]=o[k];return s;};
+  H.N=function(f,label,title,text,o){var s={f:f,t:f,label:label,title:title,text:text,note:true};if(o)for(var k in o)s[k]=o[k];return s;};
+  H.data=function(n,seed,label,desc){return PK.L(label||'Data','app',[PK.fraw('Payload',PK.rnd(n,seed),desc||'Application data carried by this segment.','"'+n+' bytes of data"')]);};
+  H.flow=function(cip,cport,sip,sport,o){o=o||{};return new PK.Flow({ip:cip,port:cport},{ip:sip,port:sport},{isnC:o.isnC||2918401237,isnS:o.isnS||1073815552,ethOut:o.ethOut||H.out,ethIn:o.ethIn||H.in,idC:o.idC,idS:o.idS});};
+  H.est=function(f){f.nxt.c=(f.nxt.c+1)>>>0;f.nxt.s=(f.nxt.s+1)>>>0;return f;};
+  H.udp=function(dir,remote,sp,dp,app,o){o=o||{};var out=dir==='out';return PK.pkt({eth:o.eth||(out?H.out:H.in),ip:{src:out?H.lap:remote,dst:out?remote:H.lap,ttl:out?64:(o.ttl||57),id:o.id||0x4a10,df:o.df},udp:{sp:sp,dp:dp},app:app,meta:o.meta});};
+  H.blen=function(l){return PK.lbytes(l).length;};
+  H.sum=function(fs){var n=0;fs.forEach(function(f){n+=f.b.length;});return n;};
+  H.enc=function(name,n,seed,desc,txt){return PK.fraw(name,PK.rnd(n,seed),desc||'Encrypted bytes. They look random on purpose: without the key nobody on the path can read them.',txt||(n+' bytes, encrypted'));};
+
+  /* ---------- DNS ---------- */
+  var DT={A:1,NS:2,CNAME:5,SOA:6,AAAA:28};
+  function encName(n){var o=[];n.split('.').forEach(function(l){if(l){o.push(l.length);o=o.concat(PK.strb(l));}});o.push(0);return o;}
+  H.encName=encName;
+  H.dns=function(o){
+    var q=o.q,an=o.an||[],ns=o.ns||[],ar=o.ar||[],resp=!!o.resp;
+    var flags=(resp?0x8000:0)|(o.aa?0x0400:0)|(o.rd?0x0100:0)|(o.ra?0x0080:0)|(o.rcode||0);
+    var ft=[resp?'response':'query'];if(o.aa)ft.push('authoritative');if(o.rd)ft.push('recursion desired');if(o.ra)ft.push('recursion available');
+    var rn={0:'no error',3:'NXDOMAIN: name does not exist'};if(o.rcode!==undefined&&o.rcode!==0)ft.push(rn[o.rcode]);
+    var fs=[
+      PK.f16('Transaction ID',o.id,'A random number that lets the asker match a reply to its question.',PK.hex(o.id,4)),
+      PK.F('Flags',PK.u16(flags),ft.join(', '),'One bit says query or response. Others say whether the server is authoritative, whether recursion is wanted or offered, and the result code.'),
+      PK.f16('Question count',1,'Number of questions in this message.'),
+      PK.f16('Answer count',an.length,'Number of answer records.'),
+      PK.f16('Authority count',ns.length,'Number of records naming the servers responsible for the zone.'),
+      PK.f16('Additional count',ar.length,'Extra helpful records, such as the addresses of the name servers named above.')
+    ];
+    fs.push(PK.F('Question: name',encName(q[0]),q[0],'The name being looked up, stored as length-prefixed labels ending in a zero byte.'));
+    fs.push(PK.f16('Question: type',DT[q[1]],'The kind of record wanted: A is an IPv4 address, NS a name server, AAAA an IPv6 address.',DT[q[1]]+' ('+q[1]+')'));
+    fs.push(PK.f16('Question: class',1,'1 means the Internet. It is always 1 in practice.','1 (IN)'));
+    function rr(sec,r,i){
+      var nm=r.name===q[0]?[0xc0,0x0c]:encName(r.name),data;
+      if(r.type==='A')data=PK.ipb(r.data);
+      else if(r.type==='NS'||r.type==='CNAME')data=encName(r.data);
+      else if(r.type==='SOA')data=PK.cat(encName(r.data[0]),encName(r.data[1]),PK.u32(r.data[2]),PK.u32(7200),PK.u32(3600),PK.u32(1209600),PK.u32(3600));
+      else data=r.data;
+      var tag=sec+' '+(i+1)+': ';
+      fs.push(PK.F(tag+'name',nm,r.name,r.name===q[0]?'A pointer (0xc00c) back to the name in the question, which saves space.':'The name this record is about.'));
+      fs.push(PK.f16(tag+'type',DT[r.type],'Record type.',DT[r.type]+' ('+r.type+')'));
+      fs.push(PK.f16(tag+'class',1,'Always 1 (Internet).','1 (IN)'));
+      fs.push(PK.f32(tag+'TTL',r.ttl,'How many seconds anyone may cache this record before asking again.',r.ttl+' s'));
+      fs.push(PK.f16(tag+'data length',data.length,'Length of the data that follows.',data.length+' bytes'));
+      fs.push(PK.F(tag+'data',data,r.type==='SOA'?'SOA: '+r.data[0]:(r.type==='A'?r.data:r.data),r.type==='A'?'The IPv4 address.':r.type==='NS'?'The name of a server responsible for this zone.':r.type==='SOA'?'Zone administration data. Its last field says how long to cache "does not exist" answers.':'Record data.'));
+    }
+    an.forEach(function(r,i){rr('Answer',r,i);});
+    ns.forEach(function(r,i){rr('Authority',r,i);});
+    ar.forEach(function(r,i){rr('Additional',r,i);});
+    return PK.L('DNS','app',fs,'DNS normally rides on UDP port 53 and fits in one datagram.');
+  };
+
+  /* ---------- TLS ---------- */
+  var TN={20:'change_cipher_spec',21:'alert',22:'handshake',23:'application_data'};
+  H.tlsRec=function(type,ver,body,name){
+    var len=H.sum(body);
+    return PK.L(name||'TLS Record','sec',[
+      PK.f8('Content type',type,'What kind of record this is: 22 handshake, 23 application data, 21 alert, 20 change cipher spec.',type+' ('+TN[type]+')'),
+      PK.F('Record version',PK.u16(ver),PK.hex(ver,4)+(ver===0x0303?' (TLS 1.2 label)':' (legacy label)'),'Kept at an old value for compatibility with middleboxes. The real version is negotiated inside the handshake.'),
+      PK.f16('Record length',len,'Number of bytes in this record after the 5-byte header.',len+' bytes')
+    ].concat(body));
+  };
+  H.hs=function(type,body,nm){
+    var HN={1:'ClientHello',2:'ServerHello',11:'Certificate',12:'ServerKeyExchange',14:'ServerHelloDone',16:'ClientKeyExchange'};
+    return [PK.f8('Handshake type',type,'Which handshake message follows.',type+' ('+(nm||HN[type])+')'),PK.f24('Handshake length',H.sum(body),'Length of this handshake message.',H.sum(body)+' bytes')].concat(body);
+  };
+  function ext(type,name,data,desc,txt){return PK.fraw('Extension: '+name,PK.cat(PK.u16(type),PK.u16(data.length),data),desc,txt);}
+  H.clientHello=function(seed){
+    var suites=[0x1301,0x1302,0x1303,0xc02b,0xc02f,0xc02c,0xc030],sb=[];suites.forEach(function(s){sb=sb.concat(PK.u16(s));});
+    var host=PK.strb('example.com'),sn=PK.cat(PK.u16(host.length+3),[0],PK.u16(host.length),host);
+    var exts=[
+      ext(0,'server_name',sn,'Server Name Indication: tells the server which site we want, so one IP address can host many sites. Sent in the clear in classic TLS.','example.com'),
+      ext(10,'supported_groups',PK.cat(PK.u16(4),PK.u16(29),PK.u16(23)),'Key-exchange curves we support: x25519 and secp256r1.','x25519, secp256r1'),
+      ext(13,'signature_algorithms',PK.cat(PK.u16(6),PK.u16(0x0403),PK.u16(0x0804),PK.u16(0x0401)),'Signature types we can verify on the certificate.','3 algorithms'),
+      ext(43,'supported_versions',PK.cat([4],PK.u16(0x0304),PK.u16(0x0303)),'The real TLS versions we support: 1.3 first, then 1.2.','TLS 1.3, TLS 1.2'),
+      ext(51,'key_share',PK.cat(PK.u16(36),PK.u16(29),PK.u16(32),PK.rnd(32,seed+3)),'Our public key for the x25519 exchange, sent up front so TLS 1.3 can finish in one round trip.','x25519 public key (32 bytes)'),
+      ext(16,'ALPN',PK.cat(PK.u16(12),[2],PK.strb('h2'),[8],PK.strb('http/1.1')),'Application protocols we can speak over this connection: HTTP/2 or HTTP/1.1.','h2, http/1.1')
+    ];
+    var body=[
+      PK.f16('Client version',0x0303,'Legacy field fixed at the TLS 1.2 value. Real versions are in the extension below.','0x0303'),
+      PK.fraw('Client random',PK.rnd(32,seed),'32 fresh random bytes used to make this session\'s keys unique.','32 random bytes'),
+      PK.fraw('Session ID',PK.cat([32],PK.rnd(32,seed+1)),'A legacy field, filled with random bytes in TLS 1.3 for middlebox compatibility.','32 bytes'),
+      PK.fraw('Cipher suites',PK.cat(PK.u16(sb.length),sb),'Encryption recipes we can use, in order of preference.',suites.length+' suites'),
+      PK.fraw('Compression',[1,0],'Compression is disabled (it caused security problems).','null only'),
+      PK.f16('Extensions length',H.sum(exts),'Total size of the extensions below.',H.sum(exts)+' bytes')
+    ].concat(exts);
+    return H.tlsRec(22,0x0301,H.hs(1,body),'TLS Record: ClientHello');
+  };
+  H.serverHello13=function(seed){
+    var exts=[
+      ext(43,'supported_versions',PK.u16(0x0304),'The server chose TLS 1.3.','TLS 1.3'),
+      ext(51,'key_share',PK.cat(PK.u16(29),PK.u16(32),PK.rnd(32,seed+3)),'The server\'s public key. With ours, both sides compute the same secret without ever sending it.','x25519 public key (32 bytes)')
+    ];
+    var body=[
+      PK.f16('Server version',0x0303,'Legacy value; see the extension below.','0x0303'),
+      PK.fraw('Server random',PK.rnd(32,seed),'32 random bytes from the server.','32 random bytes'),
+      PK.fraw('Session ID echo',PK.cat([32],PK.rnd(32,seed-100)),'Copy of the client value (compatibility).','32 bytes'),
+      PK.f16('Cipher suite',0x1302,'The recipe chosen from our list: AES-256 in GCM mode with SHA-384.','0x1302 (TLS_AES_256_GCM_SHA384)'),
+      PK.f8('Compression',0,'No compression.'),
+      PK.f16('Extensions length',H.sum(exts),'Total size of the extensions below.',H.sum(exts)+' bytes')
+    ].concat(exts);
+    return H.tlsRec(22,0x0303,H.hs(2,body),'TLS Record: ServerHello');
+  };
+  H.ccs=function(){return H.tlsRec(20,0x0303,[PK.f8('Change cipher spec',1,'A meaningless leftover in TLS 1.3, sent so old middleboxes think this is TLS 1.2.')],'TLS Record: ChangeCipherSpec');};
+  H.tlsApp=function(n,seed,name){return H.tlsRec(23,0x0303,[H.enc('Encrypted data',n,seed)],name||'TLS Record: encrypted');};
+
+  /* ---------- HTTP/1.1 ---------- */
+  H.get=function(path,extra){
+    var hd=[['Host','example.com'],['User-Agent','Mozilla/5.0'],['Accept','text/html'],['Connection','keep-alive']].concat(extra||[]);
+    return PK.textLayer('HTTP request','app','GET '+path+' HTTP/1.1',hd,null,{startName:'Request line',start:'Method, path and protocol version. GET asks the server to send the resource.',h:{Host:'Which website we want. Needed because one server can host many.','User-Agent':'Names the browser.',Accept:'Content types we can handle.',Connection:'keep-alive asks the server to keep the connection open for more requests.'}});
+  };
+  H.resp=function(code,reason,hd,body){
+    var h=hd.slice();h.push(['Content-Length',String(body?body.length:0)]);
+    return PK.textLayer('HTTP response','app','HTTP/1.1 '+code+' '+reason,h,body||null,{startName:'Status line',start:'Protocol version, a three-digit status code and a short reason.',h:{'Content-Type':'The format of the body.','Content-Length':'Body size in bytes, so the client knows where the response ends.',Location:'Where to go instead.',Server:'Names the server software.'}});
+  };
+})();
+/* ===== Labs: ARP, IP, ICMP, UDP, DHCP, NAT ===== */
+(function(){
+  var S=H.S,N=H.N;
+
+  /* ---------------- ARP ---------------- */
+  function arpFrame(op,src,dst,sha,spa,tha,tpa,meta){
+    var l=PK.arp(op,sha,spa,tha,tpa);
+    var pad=PK.L('Padding','link',[PK.fraw('Padding',PK.fill(18,0),'Ethernet frames must be at least 60 bytes, so short ones are padded with zeros.','18 zero bytes')]);
+    return PK.done([PK.eth(src,dst,0x0806),l,pad],meta);
+  }
+  var ATT='de:ad:be:ef:66:66';
+  LAB.add({
+    id:'arp',n:'ARP',name:'ARP: finding a neighbour\'s hardware address',kind:'link',lan:true,hop:'lan',
+    tagline:'IP addresses say who you want to reach. Ethernet needs a MAC address to actually deliver the frame.',
+    why:'Your laptop knows the router\'s IP address (192.168.1.1) but a network card only understands MAC addresses. Before it can send anything off the local network, it shouts a question to everyone: "Who has 192.168.1.1?" The owner answers with its MAC address, and the laptop remembers the answer for a few minutes.',
+    ideas:[['Broadcast, then unicast','The request goes to ff:ff:ff:ff:ff:ff so every device hears it. The reply goes only to the asker.'],['Only for the local network','To reach a faraway server, the laptop ARPs for the router, not for the server. The router handles the rest.'],['No security built in','Anyone on the network can claim any IP address. That is how ARP spoofing works, and why untrusted Wi-Fi is risky.']],
+    facts:[['Layer','Link (between layers 2 and 3)'],['Frame type','EtherType 0x0806'],['Size','28 bytes plus padding'],['Cache lifetime','Often 1 to 20 minutes']],
+    dropNote:'ARP has no retry built in at this layer. The operating system simply asks again a moment later, and gives up with "host unreachable" after a few tries.',dropMode:'stop',
+    scenarios:[
+      {id:'basic',l:'Who has this IP?',d:'The laptop wants to send a packet to its router and does not know the router\'s MAC address yet.',
+       actors:[{n:'Laptop',s:'192.168.1.23'},{n:'Router',s:'192.168.1.1'},{n:'Other devices',s:'phone, printer, TV'}],
+       st0:{0:'cache empty'},
+       steps:function(){return [
+        N(0,'needs router MAC','Laptop needs a MAC address','The laptop wants to send data to 192.168.1.1. It looks in its ARP cache and finds nothing, so it must ask.',{st:{0:'cache miss'}}),
+        S(0,1,'who has 192.168.1.1?','ARP request, sent to everyone','The laptop sends a <b>broadcast</b> frame. Notice the destination MAC is all <b>ff</b>, so every device on the network receives it, and the target MAC inside the ARP message is all zeros because that is what we are trying to find out.',arpFrame(1,H.lapMac,H.bc,H.lapMac,H.lap,'00:00:00:00:00:00',H.rtr),{st:{1:'heard request'}}),
+        S(1,0,'192.168.1.1 is at 9c:3d…','ARP reply, sent only to the asker','Only the owner of the IP address answers, and it answers <b>directly</b> to the laptop (unicast). The reply carries the router\'s MAC address in the Sender MAC field.',arpFrame(2,H.rtrMac,H.lapMac,H.rtrMac,H.rtr,H.lapMac,H.lap),{st:{0:'cache: router'}}),
+        N(0,'cache updated','The answer is cached','The laptop stores 192.168.1.1 → 9c:3d:cf:0b:7e:42 and now sends the real packet in an Ethernet frame addressed to that MAC. Other devices that heard the broadcast ignored it, since the target IP was not theirs.',{st:{0:'send real data'}})
+       ];}},
+      {id:'spoof',l:'ARP spoofing',d:'A malicious device on the same Wi-Fi lies about who owns the router\'s address.',
+       actors:[{n:'Laptop',s:'192.168.1.23'},{n:'Router',s:'192.168.1.1'},{n:'Attacker',s:'192.168.1.66'}],
+       st0:{0:'cache: router'},
+       steps:function(){return [
+        N(0,'cache: router OK','Normal state','The laptop has the correct entry: 192.168.1.1 is at 9c:3d:cf:0b:7e:42. All traffic to the internet goes to the real router.'),
+        S(2,0,'192.168.1.1 is at de:ad…','Forged ARP reply','The attacker sends an ARP reply nobody asked for, claiming that 192.168.1.1 is at the attacker\'s MAC. Look at <b>Sender MAC</b> and <b>Sender IP</b>: the IP is the router\'s, the MAC is the attacker\'s. ARP has no way to check.',arpFrame(2,ATT,H.lapMac,ATT,H.rtr,H.lapMac,H.lap),{st:{0:'cache: ATTACKER',2:'poisoned cache'}}),
+        N(0,'now sends to attacker','Traffic is hijacked','Operating systems accept the newest reply, so the laptop now sends its internet traffic to the attacker, who can read it and forward it on to the real router. This is a man-in-the-middle attack.',{st:{0:'cache: ATTACKER'}}),
+        N(2,'defences','How networks defend','Switches can enable <b>dynamic ARP inspection</b>, apps use TLS so intercepted traffic is unreadable, and VPNs encrypt everything. This is one reason HTTPS everywhere matters.')
+       ];}}
+    ],
+    quiz:[
+      {q:'Why is an ARP request sent to ff:ff:ff:ff:ff:ff?',o:['Because the asker does not know who owns the IP address','Because broadcast frames are faster','Because ARP replies must be encrypted','Because routers only forward broadcast frames'],a:0,h:'Think about what the sender does not know yet.',x:'The whole point of ARP is to discover the MAC address, so the question has to go to everyone.'},
+      {q:'To reach a web server on the internet, whose MAC address does your laptop ARP for?',o:['The web server\'s','The DNS server\'s','The local router\'s','The ISP\'s'],a:2,h:'The next hop, not the final destination.',x:'MAC addresses only matter on one link. The laptop needs the next hop, which is the router.'},
+      {q:'What makes ARP spoofing possible?',o:['ARP uses UDP','ARP replies are not authenticated','ARP only works on Wi-Fi','The cache never expires'],a:1,h:'Who checks the sender is telling the truth?',x:'Any host can send an ARP reply claiming any IP address, and others will usually believe it.'}
+    ]
+  });
+
+  /* ---------------- IP ---------------- */
+  var R1=['9c:3d:cf:0b:7e:43',H.ispMac],R2=[H.isp2Mac,H.bbMac],R3=[H.bb2Mac,H.srvMac];
+  function hopPkt(src,eth,ttl,payload,sp,dp){return PK.pkt({eth:eth,ip:{src:src,dst:H.web,ttl:ttl,id:0x4a10},udp:{sp:sp||50321,dp:dp||9000},app:[payload||H.data(100,5,'Data')]});}
+  var UDPL=function(src,sp,dp,pl){return PK.udp(sp,dp,pl,src,H.web);};
+  function fragments(){
+    var pay=PK.rnd(3000,21),udpL=PK.udp(50321,9000,pay,H.lap,H.web),udpB=PK.lbytes(udpL),whole=PK.cat(udpB,pay),out=[];
+    var cuts=[[0,1480],[1480,2960],[2960,whole.length]];
+    cuts.forEach(function(c,i){
+      var chunk=whole.slice(c[0],c[1]),mf=i<2;
+      var ip=PK.ip4({src:H.lap,dst:H.web,proto:17,id:0x5f3a,mf:mf,off:c[0]/8,ttl:64},chunk);
+      var data=PK.L(i===0?'UDP header + data':'Fragment data','trans',i===0?[PK.fraw('UDP header',whole.slice(0,8),'The UDP header appears only in the first fragment, because the whole datagram is split as one block of bytes.','8 bytes'),PK.fraw('Data',chunk.slice(8),'The first part of the application data.',(chunk.length-8)+' bytes')]:[PK.fraw('Data',chunk,'A middle piece of the datagram. It has no UDP header: routers do not look inside, and the receiver glues the pieces back by offset.',chunk.length+' bytes')]);
+      out.push(PK.done([PK.eth(H.lapMac,H.rtrMac,0x0800),ip,data],{}));
+    });
+    return out;
+  }
+  LAB.add({
+    id:'ip',n:'IP',name:'IP: addressing and hop-by-hop delivery',kind:'net',
+    tagline:'IP carries every packet from your device to the destination, one router at a time.',
+    why:'Each router looks only at the destination address, picks the best next hop from its table, subtracts one from the TTL and passes the packet on. The IP addresses stay the same end to end (except where NAT rewrites them), while the MAC addresses change at every hop.',
+    ideas:[['Best effort','IP never promises delivery, order or speed. It just tries. Reliability is added by TCP or by applications.'],['TTL stops loops','Every router lowers TTL by one. At zero the packet is dropped and an ICMP message goes back. Traceroute uses this.'],['MTU and fragments','A link has a maximum packet size. Big datagrams are split into fragments or, with DF set, rejected so the sender can shrink them.']],
+    facts:[['Layer','Network (3)'],['Header size','20 bytes, plus options'],['Address size','32 bits (IPv4), 128 bits (IPv6)'],['Typical MTU','1500 bytes on Ethernet']],
+    dropMode:'stop',dropNote:'IP never retransmits. The datagram is simply gone, and only a higher layer (TCP, or the application) can notice and recover.',rto:1000,
+    scenarios:[
+      {id:'hops',l:'Hop by hop',d:'One UDP datagram crosses three routers. Watch TTL fall, MAC addresses change, and the source address change once NAT acts.',
+       actors:[{n:'Laptop',s:'192.168.1.23'},{n:'Home router',s:'NAT, 203.0.113.45'},{n:'ISP router',s:'10.20.0.1'},{n:'Backbone',s:'68.85.101.45'},{n:'Server',s:'93.184.216.34'}],
+       steps:function(){return [
+        S(0,1,'datagram, TTL 64','Laptop to home router','The frame\'s destination MAC is the <b>router</b>, but the destination IP is the <b>server</b>. Compare the two: MAC is for the next hop, IP is for the final destination.',hopPkt(H.lap,H.out,64),{hop:'lan',st:{0:'TTL 64'}}),
+        N(1,'routes + NAT','Router makes two changes','It looks up the destination, rewrites the private source address to its public one (NAT) and lowers TTL to 63. Because the header changed, the checksum is recalculated.',{st:{1:'TTL 63'}}),
+        S(1,2,'TTL 63, new source','Home router to ISP router','Same IP ID and destination. New source IP, new TTL, new checksum, and brand-new MAC addresses for this link.',hopPkt(H.wan,R1,63),{hop:0.2,st:{2:'TTL 63'}}),
+        S(2,3,'TTL 62','ISP router to backbone','Each hop repeats the same job. The router never reads the UDP port or the data; it only needs the header.',hopPkt(H.wan,R2,62),{hop:0.35,st:{3:'TTL 62'}}),
+        S(3,4,'TTL 61','Backbone to server','The last router delivers to the server\'s MAC. TTL is now 61, so the packet crossed three routers after leaving the laptop.',hopPkt(H.wan,R3,61),{hop:0.45,st:{4:'received'}})
+       ];}},
+      {id:'frag',l:'Fragmentation',d:'The application sends 3,000 bytes in one UDP datagram, which is larger than the 1,500-byte Ethernet MTU.',
+       actors:[{n:'Laptop',s:'192.168.1.23'},{n:'Server',s:'93.184.216.34'}],
+       steps:function(){var fr=fragments();return [
+        N(0,'3,000-byte datagram','Datagram too big for one frame','The application hands UDP 3,000 bytes. With the 8-byte UDP header that is 3,008, but one Ethernet frame carries at most 1,480 bytes of IP payload. IP must split it.',{st:{0:'splitting'}}),
+        S(0,1,'fragment 1, offset 0','Fragment 1 of 3','All fragments share the same <b>Identification</b> (0x5f3a). This one has <b>MF</b> (more fragments) set and offset 0. Only this one contains the UDP header.',fr[0],{st:{1:'1 of 3'}}),
+        S(0,1,'fragment 2, offset 1480','Fragment 2 of 3','Offset is stored in 8-byte units, so <b>185</b> means byte 1480. It is a raw continuation of the datagram. MF is still set.',fr[1],{st:{1:'2 of 3'}}),
+        S(0,1,'fragment 3, offset 2960','Fragment 3 of 3 (last)','The final piece is small (48 bytes of data) and has <b>MF clear</b>, which tells the receiver the datagram ends here.',fr[2],{st:{1:'3 of 3'}}),
+        N(1,'reassembled','Receiver puts it back together','The server sorts pieces by ID and offset, rebuilds the 3,008 bytes, verifies the UDP checksum and passes 3,000 bytes to the application. If any one fragment is lost, the entire datagram is thrown away. That is why fragmentation is avoided today.',{st:{1:'3,000 bytes OK'}})
+       ];}},
+      {id:'pmtud',l:'Path MTU discovery',d:'The sender sets Don\'t Fragment. A link on the path is smaller, so a router asks the sender to shrink the packet.',
+       actors:[{n:'Laptop',s:'192.168.1.23'},{n:'Tunnel router',s:'link MTU 1400'},{n:'Server',s:'93.184.216.34'}],
+       steps:function(){
+        var big=PK.pkt({eth:H.out,ip:{src:H.lap,dst:H.web,ttl:64,id:0x4b01,df:true},udp:{sp:50321,dp:9000},app:[H.data(1472,31,'Data')]});
+        var quote=big.bytes.slice(14,42);
+        var icmp=PK.icmp(3,4,[PK.f16('Unused',0,'Always zero.'),PK.f16('Next-hop MTU',1400,'The largest packet the next link can carry.','1400 bytes')],quote,{type:'Destination unreachable',code:'fragmentation needed and DF set',typeDesc:'The packet could not be delivered.',dataDesc:'The IP header and first 8 bytes of the packet that did not fit, so the sender can tell which one failed.'});
+        var back=PK.pkt({eth:H.in,ip:{src:'24.130.88.1',dst:H.lap,ttl:62,id:0x0c11},icmp:icmp,meta:{}});
+        var small=PK.pkt({eth:H.out,ip:{src:H.lap,dst:H.web,ttl:64,id:0x4b02,df:true},udp:{sp:50321,dp:9000},app:[H.data(1372,31,'Data')]});
+        return [
+        S(0,1,'1,500-byte packet, DF','Full-size packet with DF set','The laptop fills the Ethernet MTU: 1,500 bytes in the IP packet. <b>DF</b> (don\'t fragment) is set, so routers must not split it.',big,{hop:0.25,st:{0:'sent 1500'}}),
+        S(1,0,'ICMP: too big, MTU 1400','Router says: too big','The next link only allows 1,400 bytes. The router drops the packet and returns <b>ICMP type 3 code 4</b> with the limit in the Next-hop MTU field.',back,{hop:0.25,st:{1:'dropped, replied'}}),
+        N(0,'lowers its size','Sender adapts','The laptop remembers that the path to this server holds at most 1,400 bytes and resends smaller packets. This is path MTU discovery.',{st:{0:'MTU 1400'}}),
+        S(0,1,'1,400-byte packet, DF','Smaller packet fits','The same data, split by the sender into packets that fit. Nobody has to reassemble fragments.',small,{hop:0.25,st:{1:'forward'}}),
+        S(1,2,'forwarded','Delivered to the server','The packet crosses the 1,400-byte link and reaches the server.',PK.pkt({eth:R3,ip:{src:H.wan,dst:H.web,ttl:61,id:0x4b02,df:true},udp:{sp:50321,dp:9000},app:[H.data(1372,31,'Data')]}),{hop:0.75,st:{2:'received'}})
+       ];}}
+    ],
+    quiz:[
+      {q:'What changes at every router along the path?',o:['Source and destination IP','TTL and the MAC addresses','The UDP ports','The data'],a:1,h:'One is a counter, one is for the next link only.',x:'TTL drops by one and the frame gets new MAC addresses. The IP addresses only change when NAT is involved.'},
+      {q:'A datagram is split into 3 fragments and the second one is lost. What happens?',o:['IP resends just that fragment','The receiver asks for it with ICMP','The whole datagram is discarded','The other two are delivered anyway'],a:2,h:'IP does not retry and reassembly needs every piece.',x:'The receiver cannot complete reassembly and eventually discards all pieces. Higher layers must resend.'},
+      {q:'Why is TTL in the IP header?',o:['To measure latency','To stop packets circling forever','To encrypt the packet','To select the route'],a:1,h:'What happens when routing tables disagree?',x:'If routers loop a packet, TTL ensures it eventually dies instead of using up the network.'}
+    ]
+  });
+
+  /* ---------------- ICMP ---------------- */
+  var PAT=PK.cat(PK.rnd(8,3),(function(){var o=[];for(var i=16;i<64;i++)o.push(i);return o;})());
+  function echo(type,seq,dir){
+    var ic=PK.icmp(type,0,[PK.f16('Identifier',0x3a7c,'Identifies the ping program so replies reach the right process.',PK.hex(0x3a7c,4)),PK.f16('Sequence number',seq,'Counts up with each ping, so replies can be matched and losses spotted.')],PAT,{type:type===8?'Echo request':'Echo reply',typeDesc:type===8?'"Are you there?"':'"Yes, I am here."',dataDesc:'Padding the sender chooses. The reply copies it back unchanged.'});
+    return PK.pkt({eth:dir==='out'?H.out:H.in,ip:{src:dir==='out'?H.lap:H.web,dst:dir==='out'?H.web:H.lap,ttl:dir==='out'?64:57,id:dir==='out'?0x3000+seq:0x5000+seq},icmp:ic});
+  }
+  var RT=[['192.168.1.1','Home router'],['24.130.88.1','ISP router'],['68.85.101.45','Backbone'],['93.184.216.34','Server']],FR=[0.05,0.3,0.65,1];
+  function probe(k){return PK.pkt({eth:H.out,ip:{src:H.lap,dst:H.web,ttl:k,id:0x6000+k},udp:{sp:46112,dp:33433+k},app:[H.data(32,40+k,'Probe data','Padding. Traceroute does not care about the contents.')]});}
+  function texc(k){
+    var q=probe(k).bytes.slice(14,42);
+    var ic=PK.icmp(11,0,[PK.f32('Unused',0,'Always zero.')],q,{type:'Time exceeded',code:'TTL expired in transit',typeDesc:'A router dropped the packet because its TTL reached zero.',dataDesc:'IP header and 8 bytes of the dropped packet, so the sender can tell which probe this answers.'});
+    return PK.pkt({eth:H.in,ip:{src:RT[k-1][0],dst:H.lap,ttl:255-k,id:0x7000+k},icmp:ic});
+  }
+  function unreach(code,cname,k,src){
+    var q=probe(k).bytes.slice(14,42);
+    var ic=PK.icmp(3,code,[PK.f32('Unused',0,'Always zero.')],q,{type:'Destination unreachable',code:cname,typeDesc:'The packet reached its target host or a router but could not be delivered.',dataDesc:'IP header and 8 bytes of the packet that failed.'});
+    return PK.pkt({eth:H.in,ip:{src:src,dst:H.lap,ttl:57,id:0x7100+k},icmp:ic});
+  }
+  LAB.add({
+    id:'icmp',n:'ICMP',name:'ICMP: ping, traceroute and error reports',kind:'net',
+    tagline:'The network\'s way of telling you what went wrong, and how ping and traceroute work.',
+    why:'IP cannot report problems by itself, so routers and hosts use ICMP: small messages that ride inside IP packets. Ping asks "are you there?". Traceroute sends packets with tiny TTLs on purpose, so each router along the path reveals itself with a "time exceeded" reply.',
+    ideas:[['Ping = echo','Type 8 asks, type 0 answers. The elapsed time is your round-trip time.'],['Traceroute = TTL trick','TTL 1 dies at router 1, TTL 2 at router 2, and so on. Each death produces an ICMP message with the router\'s address.'],['Errors quote the original','ICMP errors include the IP header and 8 bytes of the failed packet so the sender can match it to a connection.']],
+    facts:[['Layer','Network (carried inside IP)'],['IP protocol number','1'],['Common types','0 echo reply, 3 unreachable, 8 echo request, 11 time exceeded'],['Firewalls','Often filter ICMP, which can hide hops']],
+    dropMode:'stop',dropNote:'Ping is a one-shot message. When it is lost, ping simply reports "request timed out" and sends the next one.',
+    scenarios:[
+      {id:'ping',l:'Ping',d:'Measure whether a server is reachable and how long a round trip takes.',
+       actors:[{n:'Laptop',s:'192.168.1.23'},{n:'Server',s:'93.184.216.34'}],
+       steps:function(){return [
+        S(0,1,'echo request #1','Echo request','Type <b>8</b>. The identifier and sequence number let ping match replies to requests. There is no port: ICMP sits at the IP level.',echo(8,1,'out')),
+        S(1,0,'echo reply #1','Echo reply','Type <b>0</b>. The server copies the data back unchanged. Ping subtracts the send time from the arrival time and prints it. Slide the round-trip control above to see the time change.',echo(0,1,'in')),
+        S(0,1,'echo request #2','Second ping, sequence 2','Ping repeats every second with an incremented sequence number. Gaps in the sequence numbers show packet loss.',echo(8,2,'out')),
+        S(1,0,'echo reply #2','Second reply','The reply arrives with a similar time. Variation between replies is called jitter.',echo(0,2,'in'))
+       ];}},
+      {id:'trace',l:'Traceroute',d:'Find every router between you and a server by sending packets that expire on purpose.',
+       actors:[{n:'Laptop',s:'192.168.1.23'},{n:'Home router',s:'192.168.1.1'},{n:'ISP router',s:'24.130.88.1'},{n:'Backbone',s:'68.85.101.45'},{n:'Server',s:'93.184.216.34'}],
+       steps:function(){var s=[];
+        for(var k=1;k<=4;k++){(function(k){
+          var last=k===4;
+          s.push(S(0,k,'probe, TTL '+k,'Probe with TTL '+k,'Traceroute sends a UDP packet to an unlikely port (33433+'+k+') with <b>TTL '+k+'</b>. '+(last?'This time the packet is allowed to reach the server.':'The packet will die at router '+k+'.'),probe(k),{hop:FR[k-1]}));
+          if(!last)s.push(S(k,0,'TTL expired, hop '+k,'Router '+k+' reveals itself','TTL hit zero, so '+RT[k-1][1]+' drops the packet and sends <b>ICMP type 11</b> from its own address. Traceroute prints that address and the time it took.',texc(k),{hop:FR[k-1]}));
+          else s.push(S(k,0,'port unreachable','The server answers: port closed','Nothing listens on that UDP port, so the server sends <b>ICMP type 3 code 3</b>. That reply tells traceroute it has arrived and can stop.',unreach(3,'port unreachable',4,H.web),{hop:1}));
+        })(k);}
+        return s;}},
+      {id:'port',l:'Closed port',d:'A packet reaches a host that has nothing listening on that UDP port.',
+       actors:[{n:'Laptop',s:'192.168.1.23'},{n:'Server',s:'93.184.216.34'}],
+       steps:function(){return [
+        S(0,1,'UDP to port 9999','Datagram to a closed port','The server has no program using UDP port 9999.',PK.pkt({eth:H.out,ip:{src:H.lap,dst:H.web,ttl:64,id:0x6100},udp:{sp:46112,dp:33437},app:[H.data(32,44,'Probe data')]})),
+        S(1,0,'ICMP port unreachable','The operating system answers','Instead of silence, the server\'s network stack returns an ICMP error. UDP has no connection to refuse, so ICMP does the job. TCP uses a RST for the same purpose.',unreach(3,'port unreachable',4,H.web))
+       ];}}
+    ],
+    quiz:[
+      {q:'How does traceroute discover each router?',o:['It asks the routers politely','It sends packets with increasing TTL','It reads the routing table','It uses ARP'],a:1,h:'What happens when TTL reaches zero?',x:'A packet with TTL n dies at router n, and that router replies with ICMP Time Exceeded, revealing its address.'},
+      {q:'Which ICMP type is an echo reply?',o:['0','3','8','11'],a:0,h:'The request is 8.',x:'Echo request is type 8 and echo reply is type 0.'},
+      {q:'Why do ICMP errors include the original IP header and 8 bytes?',o:['For encryption','So the sender can match the error to the packet that failed','To make packets longer','To count hops'],a:1,h:'The sender may have thousands of packets in flight.',x:'The quoted bytes include ports (in the first 8 bytes of UDP or TCP), identifying the connection.'}
+    ]
+  });
+
+  /* ---------------- UDP ---------------- */
+  function game(seq,x,y,btn){
+    return PK.L('Game update','app',[
+      PK.f32('Sequence',seq,'The application numbers its own updates, because UDP does not.'),
+      PK.f16('Player ID',7,'Which player this update is for.'),
+      PK.f32('X position',x,'Horizontal position in game units.'),
+      PK.f32('Y position',y,'Vertical position in game units.'),
+      PK.f8('Buttons',btn,'Bit mask of pressed buttons.',btn?'jump':'none')
+    ]);
+  }
+  LAB.add({
+    id:'udp',n:'UDP',name:'UDP: fast, simple and unreliable',kind:'trans',
+    tagline:'Just a port number and a checksum. No handshake, no retransmission, no waiting.',
+    why:'UDP adds almost nothing to IP: ports to reach the right program, a length and a checksum. Because it does no extra work, it is perfect when speed matters more than perfection: DNS lookups, video calls, online games, and QUIC (which is HTTP/3\'s foundation). If a datagram is lost, nobody retries unless the application chooses to.',
+    ideas:[['8-byte header','Four fields: source port, destination port, length, checksum. That is all.'],['No connection','Each datagram stands alone. There is no handshake and no state to set up or tear down.'],['The app decides','Games send only the newest state and ignore stale packets. DNS asks again. QUIC builds reliability on top.']],
+    facts:[['Layer','Transport (4)'],['IP protocol number','17'],['Header size','8 bytes'],['Used by','DNS, DHCP, QUIC, VoIP, games, video']],
+    dropMode:'stop',dropNote:'UDP never notices the loss and never resends. Whether to retry is entirely up to the application.',
+    scenarios:[
+      {id:'rr',l:'Ask and answer',d:'A game client asks the server for its state and gets an answer. No setup, no teardown.',
+       actors:[{n:'Laptop',s:'192.168.1.23'},{n:'Game server',s:'93.184.216.34'}],
+       steps:function(){return [
+        S(0,1,'update #1','First datagram','The client sends immediately. No handshake came first. The UDP header is only 8 bytes, which is why this packet is tiny.',H.udp('out',H.web,50321,27015,[game(1,1200,640,0)])),
+        S(1,0,'state snapshot','Server replies','The reply goes back to the client\'s source port. That is how the response finds the right program.',H.udp('in',H.web,27015,50321,[game(1,1195,640,0)]))
+       ];}},
+      {id:'loss',l:'Lost update',d:'The client streams position updates. One is lost on the way and nothing retransmits it.',
+       actors:[{n:'Laptop',s:'192.168.1.23'},{n:'Game server',s:'93.184.216.34'}],
+       steps:function(){return [
+        S(0,1,'update #1','Update 1 arrives','Player is at x=1200.',H.udp('out',H.web,50321,27015,[game(1,1200,640,0)]),{hop:0.5}),
+        S(0,1,'update #2','Update 2 is lost','The network drops this datagram. The sender is not told, and UDP will not resend it.',H.udp('out',H.web,50321,27015,[game(2,1210,640,0)]),{lost:true,lostText:'UDP has no acknowledgements, so the client carries on as if everything is fine.',hop:0.5}),
+        S(0,1,'update #3','Update 3 arrives','The game does not wait. The sequence number jumps from 1 to 3, so the server knows one was missed.',H.udp('out',H.web,50321,27015,[game(3,1220,640,1)]),{hop:0.5,st:{1:'gap: #2 missing'}}),
+        N(1,'uses newest state','No retransmission needed','An old position is worthless anyway. The server simply takes update 3. For a game this is better than TCP, which would have frozen everything to resend update 2 first.',{st:{1:'x = 1220'}})
+       ];}}
+    ],
+    quiz:[
+      {q:'Which is NOT a UDP header field?',o:['Source port','Sequence number','Length','Checksum'],a:1,h:'UDP does not track order.',x:'UDP has no sequence numbers. Applications add their own if they need ordering.'},
+      {q:'When is UDP a better choice than TCP?',o:['Bank transfers','Live voice or game state where fresh data beats perfect data','Downloading a file','Sending email'],a:1,h:'Would a retransmitted old packet still be useful?',x:'Real-time data is useless when late, so retransmission only adds delay.'},
+      {q:'How big is the UDP header?',o:['8 bytes','20 bytes','40 bytes','4 bytes'],a:0,h:'Four 16-bit fields.',x:'Source port, destination port, length and checksum, each 2 bytes, makes 8.'}
+    ]
+  });
+
+  /* ---------------- DHCP ---------------- */
+  function dopt(code,bytes,name,txt,desc){return PK.F('Option '+code+': '+name,PK.cat([code,bytes.length],bytes),txt,desc);}
+  function dhcp(o){
+    var typeN={1:'DISCOVER',2:'OFFER',3:'REQUEST',5:'ACK'};
+    var fs=[
+      PK.f8('Op',o.op,'1 means a message from the client, 2 from the server.',o.op+(o.op===1?' (request)':' (reply)')),
+      PK.f8('Hardware type',1,'Ethernet.','1 (Ethernet)'),PK.f8('Hardware length',6,'MAC address length.'),PK.f8('Hops',0,'Relay agents increase this.'),
+      PK.f32('Transaction ID',0x3903f326,'Random number that ties the four messages of one exchange together.',PK.hex(0x3903f326,8)),
+      PK.f16('Seconds',0,'Seconds since the client began.'),PK.f16('Flags',o.bcast?0x8000:0,'The broadcast bit asks the server to reply by broadcast.',o.bcast?'broadcast':'unicast'),
+      PK.fip('Client IP',o.ci||'0.0.0.0','Filled in only when the client already has an address (renewal).'),
+      PK.fip('Your IP',o.yi||'0.0.0.0','The address the server is giving to the client.'),
+      PK.fip('Server IP',o.si||'0.0.0.0','The next server in bootstrap.'),PK.fip('Relay IP','0.0.0.0','Used when a relay forwards requests from another subnet.'),
+      PK.fraw('Client hardware address',PK.cat(PK.macb(H.lapMac),PK.fill(10,0)),'The client\'s MAC, padded to 16 bytes. The server uses it to identify the client.',H.lapMac),
+      PK.fraw('Server name + boot file',PK.fill(192,0),'Unused here (64 + 128 zero bytes).','192 zero bytes'),
+      PK.fraw('Magic cookie',[0x63,0x82,0x53,0x63],'A fixed value that marks the start of the options.','0x63825363')
+    ];
+    fs.push(dopt(53,[o.t],'Message type',typeN[o.t],'What this message is: DISCOVER, OFFER, REQUEST or ACK.'));
+    if(o.t!==2&&o.t!==5||0)fs.push(dopt(61,PK.cat([1],PK.macb(H.lapMac)),'Client identifier',H.lapMac,'How the client identifies itself.'));
+    if(o.req)fs.push(dopt(50,PK.ipb(o.req),'Requested IP',o.req,'The address the client asks for.'));
+    if(o.sid)fs.push(dopt(54,PK.ipb(o.sid),'Server identifier',o.sid,'Which DHCP server this message is about.'));
+    if(o.t===1||o.t===3)fs.push(dopt(12,PK.strb('laptop'),'Host name','laptop','Name the client would like to be known by.'));
+    if(o.t===1||o.t===3)fs.push(dopt(55,[1,3,6,15,51],'Parameter request list','mask, router, DNS, domain, lease','The settings the client wants besides an address.'));
+    if(o.t===2||o.t===5){
+      fs.push(dopt(51,PK.u32(86400),'Lease time','86400 s (24 hours)','How long the client may keep this address.'));
+      fs.push(dopt(1,PK.ipb('255.255.255.0'),'Subnet mask','255.255.255.0','Which addresses are on the local network.'));
+      fs.push(dopt(3,PK.ipb(H.rtr),'Router',H.rtr,'The default gateway: where to send traffic for the internet.'));
+      fs.push(dopt(6,PK.ipb(H.res),'DNS server',H.res,'Where to send name lookups.'));
+    }
+    fs.push(PK.F('Option 255: End',[255],'end','Marks the end of the options.'));
+    return PK.L('DHCP','app',fs);
+  }
+  function dpk(o,eth,src,dst,sp,dp){return PK.pkt({eth:eth,ip:{src:src,dst:dst,ttl:o.t===2||o.t===5?64:(src==='0.0.0.0'?128:64),id:0x1000+o.t},udp:{sp:sp,dp:dp},app:[dhcp(o)]});}
+  LAB.add({
+    id:'dhcp',n:'DHCP',name:'DHCP: getting an address when you join',kind:'app',lan:true,hop:'lan',
+    tagline:'How a device with no address at all gets one, plus its router and DNS server.',
+    why:'The moment your laptop joins Wi-Fi it has no IP address, so it cannot send a normal packet. It shouts a broadcast from address 0.0.0.0. A DHCP server (usually the router) offers an address, and a four-message exchange called DORA settles it: Discover, Offer, Request, Acknowledge.',
+    ideas:[['DORA','Discover and Request are broadcasts from the client. Offer and Acknowledge come from the server.'],['More than an address','You also learn the subnet mask, the default router and the DNS servers.'],['Leases expire','The address is lent for a time. At half the lease the client quietly asks to renew.']],
+    facts:[['Layer','Application, over UDP'],['Ports','Client 68, server 67'],['Lease','Often hours to days'],['Boot source IP','0.0.0.0 to 255.255.255.255']],
+    dropMode:'retry',rto:2000,dropNote:'The client waits a couple of seconds and sends the same message again. DHCP clients keep retrying, backing off each time.',
+    scenarios:[
+      {id:'dora',l:'Joining (DORA)',d:'A laptop with no address connects to Wi-Fi and gets 192.168.1.23.',
+       actors:[{n:'Laptop',s:'no address yet'},{n:'Router (DHCP)',s:'192.168.1.1'}],
+       st0:{0:'0.0.0.0'},
+       steps:function(){return [
+        S(0,1,'DISCOVER','Discover: is anyone a DHCP server?','The laptop uses source <b>0.0.0.0</b> and destination <b>255.255.255.255</b>, the "everyone, right now" address. The Ethernet destination is the broadcast MAC too.',dpk({op:1,t:1,bcast:true},[H.lapMac,H.bc],'0.0.0.0','255.255.255.255',68,67),{st:{0:'selecting'}}),
+        S(1,0,'OFFER 192.168.1.23','Offer: how about this address?','The server proposes an address from its pool, with a lease time, mask, router and DNS server. Look at <b>Your IP</b>.',dpk({op:2,t:2,yi:H.lap,si:H.rtr,sid:H.rtr},[H.rtrMac,H.lapMac],H.rtr,H.lap,67,68),{st:{1:'offered .23'}}),
+        S(0,1,'REQUEST 192.168.1.23','Request: yes, I will take it','Still a broadcast. Another DHCP server may have made an offer too, so the client names the server it chose in <b>Server identifier</b>, and the others withdraw.',dpk({op:1,t:3,bcast:true,req:H.lap,sid:H.rtr},[H.lapMac,H.bc],'0.0.0.0','255.255.255.255',68,67)),
+        S(1,0,'ACK, lease 24 h','Acknowledge: it is yours','The server confirms. Only now may the laptop use 192.168.1.23.',dpk({op:2,t:5,yi:H.lap,si:H.rtr,sid:H.rtr},[H.rtrMac,H.lapMac],H.rtr,H.lap,67,68),{st:{0:'192.168.1.23',1:'lease recorded'}}),
+        N(0,'configured','Ready to talk','The laptop now has an address, a mask, a router and a DNS server. Its next move is usually ARP for the router.',{st:{0:'192.168.1.23'}})
+       ];}},
+      {id:'renew',l:'Renewing a lease',d:'Halfway through the lease, the laptop asks to keep its address.',
+       actors:[{n:'Laptop',s:'192.168.1.23'},{n:'Router (DHCP)',s:'192.168.1.1'}],
+       steps:function(){return [
+        N(0,'12 hours into lease','Half the lease has passed','At 50% of the lease time, the client starts renewing, quietly, while still using its address.',{st:{0:'renewing'}}),
+        S(0,1,'REQUEST (renew)','Unicast renewal','Now the client already has an address and knows the server, so the message goes straight to it. Compare <b>Client IP</b> with the first scenario: it is now filled in.',dpk({op:1,t:3,ci:H.lap},[H.lapMac,H.rtrMac],H.lap,H.rtr,68,67)),
+        S(1,0,'ACK, lease renewed','Lease extended','The clock restarts for another 24 hours and the laptop never loses connection.',dpk({op:2,t:5,ci:H.lap,yi:H.lap,si:H.rtr,sid:H.rtr},[H.rtrMac,H.lapMac],H.rtr,H.lap,67,68),{st:{0:'lease renewed'}})
+       ];}}
+    ],
+    quiz:[
+      {q:'What source IP address does a client use in its first DHCP message?',o:['192.168.1.1','255.255.255.255','0.0.0.0','127.0.0.1'],a:2,h:'It has no address yet.',x:'The client has no address, so it uses 0.0.0.0 and broadcasts to 255.255.255.255.'},
+      {q:'What does DORA stand for?',o:['Discover, Offer, Request, Acknowledge','Data, Origin, Route, Address','Dial, Open, Reply, Accept','Detect, Obtain, Renew, Accept'],a:0,h:'Four messages.',x:'Discover, Offer, Request, Acknowledge.'},
+      {q:'Besides an IP address, what does DHCP usually provide?',o:['A password','Router and DNS server addresses','A web page','A TLS certificate'],a:1,h:'What does a device need to reach the internet?',x:'The default gateway, subnet mask and DNS servers come along with the address.'}
+    ]
+  });
+
+  /* ---------------- NAT ---------------- */
+  var WAN_ETH=['9c:3d:cf:0b:7e:43',H.ispMac],WAN_IN=[H.ispMac,'9c:3d:cf:0b:7e:43'];
+  function natPk(src,dst,sp,dp,flags,seq,ack,eth,opts,ttl,id){return PK.pkt({eth:eth,ip:{src:src,dst:dst,ttl:ttl,id:id,df:true},tcp:{sp:sp,dp:dp,seq:seq,ack:ack,flags:flags,win:flags==='SYN'?64240:(flags==='SYN,ACK'?65160:501),opts:opts||[]},app:[]});}
+  var SYNO=function(){return [PK.tcpo.mss(1460),PK.tcpo.sackok(),PK.tcpo.ts(1823400100,0),PK.tcpo.nop(),PK.tcpo.ws(7)];};
+  LAB.add({
+    id:'nat',n:'NAT',name:'NAT: sharing one public address',kind:'net',
+    tagline:'Your home has dozens of devices and only one public IP address. NAT makes that work.',
+    why:'Private addresses like 192.168.x.x are not routable on the internet, and there are not enough IPv4 addresses for every device anyway. Your router rewrites each outgoing packet so it looks like it came from the router\'s public address, using a different port for each connection, and remembers the mapping so replies find their way back.',
+    ideas:[['A table of mappings','Each connection gets a row: private IP:port ↔ public IP:port. Replies are translated back using it.'],['Outbound only by default','With no row in the table, unsolicited inbound packets are dropped. NAT accidentally acts like a basic firewall.'],['IPv6 removes the need','With 128-bit addresses every device can have its own public address.']],
+    facts:[['Layer','Network, with port rewriting'],['Done by','Your home router or carrier'],['State','Kept per connection'],['Breaks','Hosting servers, some peer-to-peer apps']],
+    dropMode:'none',dropNote:'',
+    scenarios:[
+      {id:'out',l:'Outbound connection',d:'The laptop opens a connection. Compare the packet before and after the router.',
+       actors:[{n:'Laptop',s:'192.168.1.23'},{n:'NAT router',s:'203.0.113.45'},{n:'Web server',s:'93.184.216.34'}],
+       steps:function(){return [
+        S(0,1,'SYN from 192.168.1.23:51514','Packet leaves the laptop (private side)','The source is a <b>private address</b> and the source port is 51514. The internet cannot route to 192.168.1.23.',natPk(H.lap,H.web,51514,80,'SYN',2918401237,0,H.out,SYNO(),64,0x1a2b),{hop:'lan'}),
+        N(1,'new table entry','Router creates a mapping','It records 192.168.1.23:51514 ↔ 203.0.113.45:62001, rewrites the source address and port, and recalculates the IP and TCP checksums. TTL goes down by one.',{st:{1:'51514→62001'}}),
+        S(1,2,'SYN from 203.0.113.45:62001','Same packet, public side','The packet arrives at the server with the router\'s address. The server has no idea a laptop exists behind it. Look at what changed: the source IP, source port, TTL and both checksums.',natPk(H.wan,H.web,62001,80,'SYN',2918401237,0,WAN_ETH,SYNO(),63,0x1a2b),{hop:0.5}),
+        S(2,1,'SYN-ACK to 203.0.113.45:62001','Reply addressed to the router','The server answers the address it saw, which is the router.',natPk(H.web,H.wan,80,62001,'SYN,ACK',1073815552,2918401238,WAN_IN,SYNO(),56,0x7c10),{hop:0.5}),
+        N(1,'reverse translation','Router looks up the mapping','Destination port 62001 matches the row, so the router swaps in 192.168.1.23:51514.',{st:{1:'62001→51514'}}),
+        S(1,0,'SYN-ACK to 192.168.1.23:51514','Reply delivered to the laptop','The laptop sees a normal reply to the connection it opened, unaware of the rewriting.',natPk(H.web,H.lap,80,51514,'SYN,ACK',1073815552,2918401238,H.in,SYNO(),55,0x7c10),{hop:'lan'})
+       ];}},
+      {id:'two',l:'Two devices, one address',d:'A laptop and a phone both use source port 51514. The router keeps them apart with different public ports.',
+       actors:[{n:'Laptop',s:'192.168.1.23'},{n:'NAT router',s:'203.0.113.45'},{n:'Web server',s:'93.184.216.34'}],
+       steps:function(){return [
+        S(0,1,'laptop: :51514','Laptop connects','Private 192.168.1.23, port 51514.',natPk(H.lap,H.web,51514,80,'SYN',2918401237,0,H.out,SYNO(),64,0x1a2b),{hop:'lan'}),
+        N(1,'maps to :62001','Mapping 1','192.168.1.23:51514 becomes 203.0.113.45:62001.',{st:{1:'.23 → 62001'}}),
+        S(0,1,'phone: :51514','Phone uses the same source port','A different device (192.168.1.40) happens to pick the same source port. Locally that is fine.',natPk('192.168.1.40',H.web,51514,80,'SYN',771220954,0,['5e:1a:77:c2:0b:9d',H.rtrMac],SYNO(),64,0x0d11),{hop:'lan'}),
+        N(1,'maps to :62002','Mapping 2','The router cannot reuse port 62001, so it gives the phone 62002. Now replies to either port are unambiguous.',{st:{1:'.40 → 62002'}}),
+        S(1,2,'both appear as 203.0.113.45','The server sees one address','The server sees two connections from the same IP with different source ports. Hundreds of devices can share a single address this way.',natPk(H.wan,H.web,62002,80,'SYN',771220954,0,WAN_ETH,SYNO(),63,0x0d11),{hop:0.5})
+       ];}},
+      {id:'in',l:'Unsolicited inbound',d:'Someone on the internet tries to connect to your router\'s public address.',
+       actors:[{n:'Internet host',s:'198.51.100.77'},{n:'NAT router',s:'203.0.113.45'},{n:'Laptop',s:'192.168.1.23'}],
+       steps:function(){return [
+        S(0,1,'SYN to 203.0.113.45:51514','Unexpected connection attempt','The packet arrives at the router\'s public address, port 51514, but nobody inside started this conversation.',natPk('198.51.100.77',H.wan,40000,51514,'SYN',900100,0,WAN_IN,SYNO(),48,0x2e22),{hop:0.5}),
+        N(1,'no mapping, dropped','Router drops it','There is no row in the table for port 51514, so the router has no idea which device (if any) it is for. It silently discards the packet. To allow it, you would configure a <b>port forward</b>.',{st:{1:'no match'}}),
+        N(2,'never sees it','The laptop is protected','The laptop never learns of the attempt. NAT is not a real firewall, but it blocks unsolicited connections by default.',{})
+       ];}}
+    ],
+    quiz:[
+      {q:'What does a NAT router change in an outgoing packet?',o:['Only the TTL','Source address and source port','Destination address','The payload'],a:1,h:'The server must reply to the router.',x:'The source IP and port are rewritten, and checksums are recalculated.'},
+      {q:'Why does NAT need to rewrite ports as well as addresses?',o:['To encrypt traffic','To tell apart connections from different devices sharing one address','To speed up routing','Because ports are private'],a:1,h:'Two devices can use the same source port.',x:'The public port identifies which private device and port a reply belongs to.'},
+      {q:'An inbound packet has no matching table entry. What does the router do?',o:['Broadcast it','Forward it to the laptop','Drop it','Create a new entry'],a:2,h:'It does not know who the packet is for.',x:'Without a mapping or port-forward rule, the packet is discarded.'}
+    ]
+  });
+})();
+/* ===== Labs: TCP, DNS, TLS ===== */
+(function(){
+  var S=H.S,N=H.N;
+  function txt(s,name,d){return PK.L(name||'Data','app',[PK.fstr('Payload',s,d||'The bytes the application asked TCP to deliver.')]);}
+
+  /* ---------------- TCP ---------------- */
+  function tflow(sport,dport){return H.flow(H.lap,sport||51514,H.web,dport||80);}
+  LAB.add({
+    id:'tcp',n:'TCP',name:'TCP: reliable, ordered delivery',kind:'trans',extra:'tcpwin',rto:1000,
+    tagline:'A conversation with handshakes, numbering, acknowledgements and retransmission, built on unreliable IP.',
+    why:'IP may drop, duplicate or reorder packets. TCP hides all of that. It opens a connection with a three-way handshake, numbers every byte, makes the receiver acknowledge what arrived, resends what is missing and slows down when the network is congested. Web pages, email and file transfers all depend on it.',
+    ideas:[['Sequence and ACK numbers','Every byte has a number. An ACK of N means "I have everything before byte N".'],['Handshake costs a round trip','Data cannot flow until SYN, SYN-ACK and ACK are done. That is why connection reuse matters.'],['Recover without waiting','Three duplicate ACKs tell the sender a segment was lost. It resends immediately instead of waiting for a timeout.'],['The window limits speed','A sender can only have one window of data in flight. Throughput is at most window ÷ round-trip time.']],
+    facts:[['Layer','Transport (4)'],['IP protocol number','6'],['Header size','20 bytes, up to 60 with options'],['Used by','HTTP/1.1, HTTP/2, TLS, email, SSH']],
+    dropNote:'TCP waits for an acknowledgement. When none comes within the retransmission timeout, it sends the same segment again, with exactly the same sequence number.',
+    scenarios:[
+      {id:'life',l:'Connect, talk, close',d:'The complete life of a TCP connection: three-way handshake, one exchange of data, and a four-step close.',
+       actors:[{n:'Client',s:'192.168.1.23:51514'},{n:'Server',s:'93.184.216.34:80'}],
+       st0:{0:'CLOSED',1:'LISTEN'},
+       steps:function(){var f=tflow();return [
+        S(0,1,'SYN','SYN: "can we talk?"','The client picks a random starting sequence number (the <b>ISN</b>) and sends SYN. The options advertise its maximum segment size, window scaling, SACK and timestamps. A SYN consumes one sequence number.',f.seg('c','SYN'),{st:{0:'SYN_SENT'}}),
+        S(1,0,'SYN-ACK','SYN-ACK: "yes, and me too"','The server chooses its own ISN and acknowledges the client\'s: ACK = client ISN + 1. Both flags set: it agrees and it opens its own direction.',f.seg('s','SYN,ACK'),{st:{1:'SYN_RCVD'}}),
+        S(0,1,'ACK','ACK: connection open','The client acknowledges the server\'s ISN. Both sides are now <b>ESTABLISHED</b>. This costs one full round trip before any data moves.',f.seg('c','ACK'),{st:{0:'ESTABLISHED',1:'ESTABLISHED'}}),
+        S(0,1,'data, 14 bytes','Client sends data','The segment carries 14 bytes, so the sequence number advances by 14. PSH asks the receiver to hand the data to the application right away.',f.seg('c','PSH,ACK',[txt('Hello, server!')])),
+        S(1,0,'ACK','Server acknowledges','ACK = previous sequence + 14. This cumulative number confirms every byte so far. The server\'s own sequence number did not move because it sent no data.',f.seg('s','ACK')),
+        S(1,0,'data, 14 bytes','Server sends data','Data flows both ways independently, each direction with its own numbering.',f.seg('s','PSH,ACK',[txt('Hello, laptop!')])),
+        S(0,1,'ACK','Client acknowledges','Every data segment is acknowledged, though ACKs are often delayed or combined.',f.seg('c','ACK')),
+        S(0,1,'FIN','FIN: "I am done sending"','The client closes its direction. FIN consumes one sequence number, just like SYN.',f.seg('c','FIN,ACK'),{st:{0:'FIN_WAIT_1'}}),
+        S(1,0,'ACK','Server acknowledges FIN','The connection is now half-closed: the server may still send more data.',f.seg('s','ACK'),{st:{0:'FIN_WAIT_2',1:'CLOSE_WAIT'}}),
+        S(1,0,'FIN','FIN: "me too"','When the server application finishes it closes its own direction.',f.seg('s','FIN,ACK'),{st:{1:'LAST_ACK'}}),
+        S(0,1,'ACK','Final ACK','The client acknowledges the server\'s FIN. The server can forget the connection immediately.',f.seg('c','ACK'),{st:{0:'TIME_WAIT',1:'CLOSED'}}),
+        N(0,'waits 60 s','TIME_WAIT','The client lingers for about two minutes so that stray duplicate segments from this connection cannot be mistaken for a new one that reuses the same ports.',{st:{0:'CLOSED'}})
+       ];}},
+      {id:'loss',l:'Loss and fast retransmit',d:'The server sends five segments; the second is lost. Duplicate ACKs trigger a quick resend.',
+       actors:[{n:'Client',s:'192.168.1.23:51514'},{n:'Server',s:'93.184.216.34:80'}],
+       st0:{0:'ESTABLISHED',1:'ESTABLISHED'},
+       steps:function(){
+        var f=H.est(tflow()),sq=[],sg=[],i;
+        var sack=function(l,r){return [PK.tcpo.nop(),PK.tcpo.nop(),PK.tcpo.ts(f.ts.c+30,f.ts.s),PK.tcpo.nop(),PK.tcpo.nop(),PK.tcpo.sack(l,r)];};
+        for(i=0;i<5;i++){sq.push(f.nxt.s);sg.push(f.seg('s','ACK',[H.data(1000,60+i,'Data')]));}
+        var end=f.nxt.s;
+        return [
+        S(1,0,'segment 1 (1000 B)','Server sends segment 1','A download is under way. Each segment carries 1,000 bytes. The sequence number is the position of its first byte.',sg[0],{hop:0.5}),
+        S(1,0,'segment 2 (lost)','Segment 2 is lost','The network drops it. The sender does not know yet. It carries on sending because its window allows more.',sg[1],{lost:true,lostText:'Segment 2 never reaches the client.',hop:0.5}),
+        S(1,0,'segment 3','Segment 3 arrives','It is not the next expected byte, so it cannot be delivered in order. The client keeps it in a buffer.',sg[2],{hop:0.5}),
+        S(0,1,'ACK for seg 1','ACK of segment 1','The client acknowledges up to the end of segment 1.',f.seg('c','ACK',[],{ack:sq[1]}),{hop:0.5}),
+        S(0,1,'dup ACK #1 + SACK','Duplicate ACK 1','Still asking for the same byte as before, but the <b>SACK</b> option reports that segment 3 did arrive. The gap is exactly segment 2.',f.seg('c','ACK',[],{ack:sq[1],opts:sack(sq[2],sq[3])}),{hop:0.5}),
+        S(1,0,'segment 4','Segment 4 arrives','Another out-of-order segment.',sg[3],{hop:0.5}),
+        S(0,1,'dup ACK #2','Duplicate ACK 2','The same ACK number again; SACK now covers segments 3 and 4.',f.seg('c','ACK',[],{ack:sq[1],opts:sack(sq[2],sq[4])}),{hop:0.5}),
+        S(1,0,'segment 5','Segment 5 arrives','And another.',sg[4],{hop:0.5}),
+        S(0,1,'dup ACK #3','Duplicate ACK 3','Three duplicates in a row. That is the signal: the sender should not wait for a timeout.',f.seg('c','ACK',[],{ack:sq[1],opts:sack(sq[2],end)}),{hop:0.5}),
+        N(1,'fast retransmit','Server concludes: segment 2 is lost','Three duplicate ACKs trigger a <b>fast retransmit</b>, and congestion control halves the sending window because loss suggests the network is crowded.',{st:{1:'cwnd halved'}}),
+        S(1,0,'segment 2 again','Retransmission of segment 2','The same sequence number and exactly the same 1,000 bytes. Compare it with the lost one.',f.seg('s','ACK',[H.data(1000,61,'Data')],{seq:sq[1],noAdvance:true}),{hop:0.5}),
+        S(0,1,'ACK, everything','One ACK for all five','Now the client has no gaps, so it acknowledges everything at once: the cumulative ACK jumps from the end of segment 1 to the end of segment 5.',f.seg('c','ACK',[],{ack:end}),{hop:0.5,st:{1:'ESTABLISHED'}})
+       ];}},
+      {id:'rst',l:'Connection refused',d:'The client tries to connect to a port where nothing is listening.',
+       actors:[{n:'Client',s:'192.168.1.23:51600'},{n:'Server',s:'93.184.216.34:8080'}],
+       st0:{0:'CLOSED',1:'no listener'},
+       steps:function(){var f=tflow(51600,8080);return [
+        S(0,1,'SYN to port 8080','SYN to a closed port','The client asks to open a connection on port 8080.',f.seg('c','SYN'),{st:{0:'SYN_SENT'}}),
+        S(1,0,'RST, ACK','Server answers with RST','No program is listening on port 8080, so the server\'s operating system answers instantly with a <b>RST</b> (reset) flag. The client sees "connection refused" within one round trip, not a long timeout.',f.seg('s','RST,ACK',[],{seq:0,opts:[],win:0}),{st:{0:'CLOSED',1:'no listener'}}),
+        N(0,'connection refused','The application is told at once','Compare this with a firewall that silently drops the SYN: then the client would keep retrying for many seconds before giving up.',{})
+       ];}}
+    ],
+    quiz:[
+      {q:'In the three-way handshake, what does the SYN-ACK acknowledge?',o:['The server\'s own sequence number','The client\'s ISN plus one','The last data byte','The window size'],a:1,h:'A SYN uses up one sequence number.',x:'The server\'s ACK equals the client\'s ISN + 1, confirming the client\'s SYN.'},
+      {q:'How does a sender know it should fast retransmit?',o:['A timer expires','Three duplicate ACKs arrive','The receiver sends a NAK','The router tells it'],a:1,h:'The receiver keeps asking for the same byte.',x:'Three duplicate ACKs mean later segments are arriving but one is missing.'},
+      {q:'A server returns RST when your SYN reaches it. What does that mean?',o:['The server is overloaded','Nothing is listening on that port','The packet was corrupted','The network is congested'],a:1,h:'It is an immediate answer.',x:'RST is how a host refuses a connection to a closed port.'},
+      {q:'With a 64 KB window and 200 ms round trip, what limits throughput?',o:['The window: about 2.6 Mbit/s at most','The link, always','The checksum','Nothing'],a:0,h:'Window ÷ RTT. Try the throughput calculator below.',x:'65,536 bytes × 8 ÷ 0.2 s ≈ 2.6 Mbit/s, no matter how fast the link is.'}
+    ]
+  });
+
+  /* ---------------- DNS ---------------- */
+  var RO=['d4:5d:64:77:10:21','00:1d:e5:3a:07:c9'],RI=['00:1d:e5:3a:07:c9','d4:5d:64:77:10:21'];
+  function dq(id,name,rd){return H.udp('out',H.res,53811,53,[H.dns({id:id,q:[name,'A'],rd:rd,resp:false})],{id:id});}
+  function dr(id,o){o.id=id;o.resp=true;o.rd=true;o.ra=true;return H.udp('in',H.res,53,53811,[H.dns(o)],{id:id+1,ttl:58});}
+  function up(id,ip,name,out,resp,o){
+    var m=H.dns(out?{id:id,q:[name,'A'],resp:false}:o);
+    return PK.pkt({eth:out?RO:RI,ip:{src:out?H.res:ip,dst:out?ip:H.res,ttl:out?64:50,id:id},udp:{sp:out?41822:53,dp:out?53:41822},app:[m]});
+  }
+  function upr(id,ip,name,o){o.id=id;o.q=[name,'A'];o.resp=true;return up(id,ip,name,false,true,o);}
+  var A_EX={name:'example.com',type:'A',ttl:3600,data:H.web};
+  LAB.add({
+    id:'dns',n:'DNS',name:'DNS: turning names into addresses',kind:'app',rto:1000,hop:1,
+    tagline:'The internet\'s phone book: how example.com becomes 93.184.216.34.',
+    why:'Humans remember names; routers need numbers. Your device asks a recursive resolver, which does the legwork. It starts at a root server, is pointed to the .com servers, then to the servers that are authoritative for example.com, and finally gets the address. Everything it learns is cached for the time the record allows.',
+    ideas:[['A hierarchy of servers','Root servers know who runs each top-level domain. Those know who runs each domain. Each answer is a pointer, until the last one.'],['Caching is everything','Records come with a TTL. Cached answers skip the whole journey, so most lookups take only a few milliseconds.'],['Mostly UDP, mostly unencrypted','Classic DNS reveals every name you look up. DNS over HTTPS and TLS fix that.']],
+    facts:[['Layer','Application'],['Transport','UDP port 53 (TCP for large answers)'],['Common records','A, AAAA, CNAME, NS, MX, TXT'],['Root servers','13 addresses, hundreds of machines']],
+    dropNote:'The sender waits about a second and asks again, sometimes picking a different server.',
+    scenarios:[
+      {id:'full',l:'Full lookup',d:'Nothing is cached. The resolver walks the hierarchy from the root.',
+       actors:[{n:'Laptop',s:'stub resolver'},{n:'Resolver',s:'1.1.1.1'},{n:'Root server',s:'198.41.0.4'},{n:'.com server',s:'192.5.6.30'},{n:'example.com NS',s:'199.43.135.53'}],
+       steps:function(){return [
+        S(0,1,'example.com A?','Laptop asks its resolver','The laptop sets <b>recursion desired</b>: "please do all the work and just give me the answer".',dq(0xa1b2,'example.com',true),{hop:0.3}),
+        S(1,2,'example.com A?','Resolver asks a root server','The resolver does not set recursion desired, because root servers never do the work for you.',up(0x5c01,H.root,'example.com',true),{hop:1}),
+        S(2,1,'ask .com servers','Root: "ask the .com servers"','A <b>referral</b>: no answer, but an NS record naming a server for com, with its address in the Additional section (glue) so the resolver does not need another lookup.',upr(0x5c01,H.root,'example.com',{ns:[{name:'com',type:'NS',ttl:172800,data:'a.gtld-servers.net'}],ar:[{name:'a.gtld-servers.net',type:'A',ttl:172800,data:H.tld}]}),{hop:1}),
+        S(1,3,'example.com A?','Resolver asks the .com server','The same question, now sent one level down.',up(0x5c02,H.tld,'example.com',true),{hop:1}),
+        S(3,1,'ask example.com NS','.com: "ask example.com\'s own servers"','Another referral, this time to the servers that are in charge of example.com.',upr(0x5c02,H.tld,'example.com',{ns:[{name:'example.com',type:'NS',ttl:172800,data:'a.iana-servers.net'}],ar:[{name:'a.iana-servers.net',type:'A',ttl:172800,data:H.ns}]}),{hop:1}),
+        S(1,4,'example.com A?','Resolver asks the authority','The last stop: the servers that own the zone.',up(0x5c03,H.ns,'example.com',true),{hop:1}),
+        S(4,1,'A 93.184.216.34','The authoritative answer','The <b>AA</b> flag marks this as authoritative. The answer record has a TTL of 3600 seconds: the resolver may cache it for an hour.',upr(0x5c03,H.ns,'example.com',{aa:true,an:[A_EX]}),{hop:1,st:{1:'cached 1 h'}}),
+        S(1,0,'A 93.184.216.34','Resolver replies to the laptop','The final answer carries the <b>recursion available</b> flag. Look at the transaction ID: it matches the laptop\'s original query, not the resolver\'s internal ones.',dr(0xa1b2,{q:['example.com','A'],an:[A_EX]}),{hop:0.3,st:{0:'93.184.216.34'}})
+       ];}},
+      {id:'cache',l:'Cached answer',d:'The same question again a little later, now answered from cache.',
+       actors:[{n:'Laptop',s:'stub resolver'},{n:'Resolver',s:'1.1.1.1'}],
+       steps:function(){return [
+        N(0,'OS cache expired','Device cache has no entry','The laptop\'s own cache expired, so it asks the resolver again.'),
+        S(0,1,'example.com A?','Query again','The same query as before, but now the resolver already knows the answer.',dq(0xb3c4,'example.com',true),{hop:0.3}),
+        S(1,0,'A 93.184.216.34 (TTL 2217)','Answer from cache','No other server is contacted. The <b>TTL</b> in the answer is now 2217, not 3600: it counts down as the record ages. When it hits zero, the resolver must start over.',dr(0xb3c4,{q:['example.com','A'],an:[{name:'example.com',type:'A',ttl:2217,data:H.web}]}),{hop:0.3,st:{0:'93.184.216.34'}})
+       ];}},
+      {id:'nx',l:'Name does not exist',d:'Looking up a name that does not exist returns NXDOMAIN.',
+       actors:[{n:'Laptop',s:'stub resolver'},{n:'Resolver',s:'1.1.1.1'},{n:'example.com NS',s:'199.43.135.53'}],
+       steps:function(){
+        var nm='nosuchpage.example.com',soa={name:'example.com',type:'SOA',ttl:3600,data:['ns.icann.org','noc.dns.icann.org',2024081501]};
+        return [
+        S(0,1,'nosuchpage.example.com A?','Laptop asks','A typo or a deleted subdomain.',dq(0xc5d6,nm,true),{hop:0.3}),
+        S(1,2,'nosuchpage.example.com A?','Resolver asks the authority','The resolver already cached who runs example.com, so it skips the root and .com servers.',up(0x5c10,H.ns,nm,true),{hop:1}),
+        S(2,1,'NXDOMAIN','Authority: "no such name"','The response code is <b>3 (NXDOMAIN)</b>. The Authority section includes an SOA record whose last field tells resolvers how long they may cache this negative answer.',upr(0x5c10,H.ns,nm,{aa:true,rcode:3,ns:[soa]}),{hop:1}),
+        S(1,0,'NXDOMAIN','Resolver relays the failure','The browser will show "server not found". Negative answers are cached too, which protects the servers from repeated bad lookups.',dr(0xc5d6,{q:[nm,'A'],rcode:3,ns:[soa]}),{hop:0.3})
+       ];}}
+    ],
+    quiz:[
+      {q:'What does a root server return when asked for example.com?',o:['The IP address of example.com','A referral to the .com servers','An error','The IP of the resolver'],a:1,h:'Root servers only know who runs each top-level domain.',x:'The root says "ask the servers for .com". It never knows the final address.'},
+      {q:'What does the TTL in a DNS answer control?',o:['The number of hops','How long the answer may be cached','Packet lifetime on the network','The server timeout'],a:1,h:'It is measured in seconds.',x:'TTL says how long a resolver or device may reuse the record without asking again.'},
+      {q:'Which flag value in a response means the name does not exist?',o:['NOERROR','NXDOMAIN','SERVFAIL','REFUSED'],a:1,h:'It is response code 3.',x:'NXDOMAIN means the authoritative server has no such name.'}
+    ]
+  });
+
+  /* ---------------- TLS ---------------- */
+  function tf(){return H.est(H.flow(H.lap,51514,H.web,443));}
+  function sh12(seed){
+    var body=[PK.f16('Server version',0x0303,'TLS 1.2.','0x0303 (TLS 1.2)'),PK.fraw('Server random',PK.rnd(32,seed),'32 random bytes.','32 random bytes'),PK.fraw('Session ID',PK.cat([32],PK.rnd(32,seed+1)),'Identifier for resuming this session later.','32 bytes'),PK.f16('Cipher suite',0xc02f,'Chosen recipe: ECDHE key exchange, RSA certificate, AES-128-GCM.','0xc02f (ECDHE-RSA-AES128-GCM-SHA256)'),PK.f8('Compression',0,'None.'),PK.f16('Extensions length',0,'No extensions in this simplified view.','0 bytes')];
+    return H.tlsRec(22,0x0303,H.hs(2,body),'TLS Record: ServerHello');
+  }
+  function cert12(){
+    var c=PK.cat(PK.rnd(60,5),PK.strb('DigiCert Global G2 TLS RSA SHA256 2020 CA1'),PK.rnd(70,6),PK.strb('Example Domain Inc'),PK.rnd(40,7),PK.strb('example.com'),PK.rnd(300,8));
+    var body=[PK.f24('Certificates length',c.length+3,'Total size of the certificate list.',(c.length+3)+' bytes'),PK.f24('Certificate length',c.length,'Size of the first certificate.',c.length+' bytes'),PK.fraw('Certificate (X.509)',c,'The server\'s certificate. In TLS 1.2 it is sent in the clear: look in the ASCII column to find the readable site name and issuer. A real chain is often several kilobytes.','certificate for example.com')];
+    return H.tlsRec(22,0x0303,H.hs(11,body),'TLS Record: Certificate');
+  }
+  function ske12(){
+    var body=[PK.f8('Curve type',3,'A named elliptic curve.','3 (named_curve)'),PK.f16('Named curve',29,'x25519.','29 (x25519)'),PK.fraw('Server public key',PK.cat([32],PK.rnd(32,9)),'The server\'s one-time public key.','32 bytes'),PK.f16('Signature algorithm',0x0403,'How the key is signed.','0x0403 (ecdsa_secp256r1_sha256)'),PK.f16('Signature length',72,'Size of the signature.','72 bytes'),PK.fraw('Signature',PK.rnd(72,10),'Proves the key really comes from the certificate\'s owner.','72 bytes')];
+    return H.tlsRec(22,0x0303,H.hs(12,body),'TLS Record: ServerKeyExchange');
+  }
+  function cke12(){return H.tlsRec(22,0x0303,H.hs(16,[PK.fraw('Client public key',PK.cat([32],PK.rnd(32,12)),'The client\'s one-time public key. Both sides now compute the same secret.','32 bytes')]),'TLS Record: ClientKeyExchange');}
+  LAB.add({
+    id:'tls',n:'TLS',name:'TLS: encrypting the conversation',kind:'sec',rto:1000,
+    tagline:'How your browser agrees on secret keys with a server it has never met, and checks it is the right one.',
+    why:'Without TLS, everyone on the path can read and change your traffic. TLS gives you three things: confidentiality (encryption), integrity (tampering is detected) and authentication (a certificate proves the server\'s identity). The handshake uses public-key cryptography to create a shared secret, then both sides switch to fast symmetric encryption.',
+    ideas:[['Key exchange','Both sides send public values. Mixing them with their own private values gives each the same secret, which an eavesdropper cannot compute.'],['Certificates prove identity','A certificate authority your device trusts signs a statement: "this key belongs to example.com".'],['TLS 1.3 is faster and tidier','One round trip instead of two, and most of the handshake, including the certificate, is encrypted.']],
+    facts:[['Layer','Between TCP and the application'],['Port','443 for HTTPS'],['Current version','TLS 1.3 (2018)'],['Still visible','IP addresses, ports, usually the server name (SNI)']],
+    dropNote:'The segment is lost, so TCP underneath resends it. TLS never sees the problem, only a short delay.',
+    scenarios:[
+      {id:'t13',l:'TLS 1.3 handshake',d:'The TCP connection is open. Now the browser and server agree on keys in one round trip.',
+       actors:[{n:'Browser',s:'192.168.1.23'},{n:'Server',s:'93.184.216.34:443'}],
+       steps:function(){var f=tf();return [
+        S(0,1,'ClientHello','ClientHello: our options and our key share','The browser sends the versions and cipher suites it supports, a random number, the server name (SNI), and already its <b>key share</b> for the key exchange. Sending it up front is what saves a round trip. (TCP ACKs are left out of this diagram.)',f.seg('c','PSH,ACK',[H.clientHello(11)]),{st:{0:'ClientHello sent'}}),
+        S(1,0,'ServerHello + encrypted flight','The server answers with its key share','The ServerHello picks TLS 1.3 and a cipher suite and contains the server\'s key share. Both sides can now compute the secret. Everything after it is <b>encrypted</b>: the long record at the end holds the server\'s extensions, its certificate chain, the signature and its Finished message.',f.seg('s','PSH,ACK',[H.serverHello13(41),H.ccs(),H.tlsApp(1000,77,'TLS Record: encrypted handshake')]),{st:{1:'keys derived'}}),
+        N(0,'verifies certificate','The browser checks the certificate','It decrypts the flight and checks that the certificate chains to a trusted authority, has not expired, matches <b>example.com</b>, and that the signature proves the server owns the key.',{st:{0:'certificate valid'}}),
+        S(0,1,'Finished (encrypted)','Client Finished','A hash of the whole handshake, encrypted. If anyone had tampered with it, the hashes would disagree. The handshake is complete.',f.seg('c','PSH,ACK',[H.ccs(),H.tlsApp(58,81,'TLS Record: encrypted Finished')]),{st:{0:'secure',1:'secure'}}),
+        S(0,1,'HTTP request (encrypted)','Application data','Now the HTTP request travels inside the encrypted record. A person watching the network sees only the type byte (23), the length, and random-looking bytes.',f.seg('c','PSH,ACK',[H.tlsApp(128,90,'TLS Record: encrypted HTTP request')])),
+        S(1,0,'HTTP response (encrypted)','Encrypted response','The page comes back, also unreadable. Only the size is visible to outsiders.',f.seg('s','PSH,ACK',[H.tlsApp(620,91,'TLS Record: encrypted HTTP response')]))
+       ];}},
+      {id:'t12',l:'TLS 1.2 (older)',d:'The same job needs two round trips and exposes the certificate to anyone watching.',
+       actors:[{n:'Browser',s:'192.168.1.23'},{n:'Server',s:'93.184.216.34:443'}],
+       steps:function(){var f=tf();return [
+        S(0,1,'ClientHello','ClientHello','Offers the versions and suites it knows. This one is the same as before.',f.seg('c','PSH,ACK',[H.clientHello(11)]),{st:{0:'ClientHello sent'}}),
+        S(1,0,'ServerHello + cert + key','Server flight, in the clear','Unlike TLS 1.3, the server\'s whole flight is readable: ServerHello, the <b>Certificate</b> (search the ASCII column for the site name), the key-exchange parameters, and ServerHelloDone. It ends with "your turn".',f.seg('s','PSH,ACK',[sh12(41),cert12(),ske12(),H.tlsRec(22,0x0303,H.hs(14,[],'ServerHelloDone'),'TLS Record: ServerHelloDone')]),{st:{1:'waiting for client'}}),
+        S(0,1,'KeyExchange, CCS, Finished','Client key exchange and Finished','The client sends its public key and then switches to encryption with Change Cipher Spec and an encrypted Finished message.',f.seg('c','PSH,ACK',[cke12(),H.ccs(),H.tlsApp(40,82,'TLS Record: encrypted Finished')]),{st:{0:'keys derived'}}),
+        S(1,0,'CCS, Finished','Server Finished','Only now can the server confirm. That is the second round trip. Application data cannot begin until here.',f.seg('s','PSH,ACK',[H.ccs(),H.tlsApp(40,83,'TLS Record: encrypted Finished')]),{st:{0:'secure',1:'secure'}}),
+        S(0,1,'HTTP request (encrypted)','Application data','First encrypted request, one round trip later than TLS 1.3.',f.seg('c','PSH,ACK',[H.tlsApp(128,90,'TLS Record: encrypted HTTP request')]))
+       ];}},
+      {id:'bad',l:'Certificate problem',d:'The certificate does not match the site, so the browser refuses to continue.',
+       actors:[{n:'Browser',s:'192.168.1.23'},{n:'Server',s:'93.184.216.34:443'}],
+       steps:function(){var f=tf();return [
+        S(0,1,'ClientHello','ClientHello','The browser asks for example.com.',f.seg('c','PSH,ACK',[H.clientHello(11)]),{st:{0:'ClientHello sent'}}),
+        S(1,0,'ServerHello + encrypted flight','Server flight','This time the certificate inside the encrypted flight is for <b>other-site.test</b>, not example.com. It could be a misconfiguration or someone impersonating the server.',f.seg('s','PSH,ACK',[H.serverHello13(41),H.ccs(),H.tlsApp(1000,77,'TLS Record: encrypted handshake')]),{st:{1:'keys derived'}}),
+        N(0,'name mismatch','The browser rejects it','The certificate name does not match the host the user typed. The browser shows a full-page warning (for example NET::ERR_CERT_COMMON_NAME_INVALID). It would also refuse for an expired, revoked or untrusted-issuer certificate.',{st:{0:'abort'}}),
+        S(0,1,'alert (encrypted)','Fatal alert','The browser sends an alert, encrypted like everything else after the handshake keys, and then closes the connection.',f.seg('c','PSH,ACK',[H.tlsApp(19,95,'TLS Record: encrypted alert')]),{st:{0:'closed'}}),
+        S(0,1,'FIN','Connection closed','No application data was ever sent, so the user\'s password or cookies stay private.',f.seg('c','FIN,ACK'),{st:{1:'closed'}})
+       ];}}
+    ],
+    quiz:[
+      {q:'What does a certificate prove?',o:['The site is safe','The key belongs to the named site, as vouched for by a trusted authority','The connection is fast','The server has no bugs'],a:1,h:'It is about identity, not trustworthiness.',x:'It binds a public key to a name. It does not say the site is honest, only that it is who it claims to be.'},
+      {q:'How many round trips does the TLS 1.3 handshake need (after TCP)?',o:['0','1','2','3'],a:1,h:'ClientHello out, ServerHello flight back, then you can send data.',x:'TLS 1.2 needed two. TLS 1.3 needs one.'},
+      {q:'What can an eavesdropper still see with TLS 1.3?',o:['URLs and cookies','Page contents','IP addresses, ports, sizes and usually the server name','Nothing at all'],a:2,h:'Think about what routers need to deliver the packets.',x:'Headers below TLS and the SNI hostname stay visible. The content is hidden.'}
+    ]
+  });
+})();
+/* ===== Labs: HTTP/1.1, HTTP/2, QUIC, WebSocket, BGP ===== */
+(function(){
+  var S=H.S,N=H.N;
+  function f80(){return H.est(H.flow(H.lap,51514,H.web,80));}
+  function f443(){return H.est(H.flow(H.lap,51514,H.web,443));}
+  var PAGE='<!doctype html><html><head><title>Example Domain</title></head><body><h1>Example Domain</h1><p>Hello!</p></body></html>';
+
+  /* ---------------- HTTP/1.1 ---------------- */
+  var SRV=[['Server','ECS (nyb/1D2E)']];
+  LAB.add({
+    id:'http1',n:'HTTP/1.1',name:'HTTP/1.1: the language of the web',kind:'app',rto:1000,
+    tagline:'Plain text requests and responses. You can read every byte.',
+    why:'HTTP is a simple question-and-answer protocol. The browser sends a request line, headers and optionally a body. The server answers with a status code, headers and the content. It travels over a TCP connection, which here is already open. (This lab uses plain port 80 so you can read the text; real sites wrap this inside TLS.)',
+    ideas:[['Request, response','A method (GET, POST, ...) and a path go out; a status code (200, 301, 404, ...) and a body come back.'],['Headers carry metadata','Host, cookies, content type and caching rules are all just text lines.'],['Keep-alive','Reusing one connection for many requests avoids paying the TCP handshake each time.'],['Cleartext is dangerous','Anyone on the path can read passwords and cookies sent over plain HTTP.']],
+    facts:[['Layer','Application'],['Transport','TCP, port 80 (443 with TLS)'],['Status classes','2xx ok, 3xx redirect, 4xx client error, 5xx server error'],['Limitation','One response at a time per connection']],
+    dropNote:'TCP resends the segment underneath. HTTP only notices a delay.',
+    scenarios:[
+      {id:'get',l:'GET a page',d:'Fetch a web page over an already established connection.',
+       actors:[{n:'Browser',s:'192.168.1.23'},{n:'Web server',s:'93.184.216.34:80'}],
+       steps:function(){var f=f80();return [
+        S(0,1,'GET /','Request line, headers, blank line','The first line holds the <b>method</b>, the <b>path</b> and the version. The <b>Host</b> header names the site, because one IP address may host thousands. The blank line ends the headers.',f.seg('c','PSH,ACK',[H.get('/')])),
+        S(1,0,'200 OK + HTML','Status 200 and the page','The status line says it worked. <b>Content-Length</b> tells the browser how many body bytes follow, and the body is the HTML itself. You can read it in the ASCII column of the inspector.',f.seg('s','PSH,ACK',[H.resp(200,'OK',[['Content-Type','text/html; charset=UTF-8']].concat(SRV,[['Cache-Control','max-age=604800']]),PAGE)])),
+        S(0,1,'ACK','Client acknowledges','TCP confirms receipt. The connection stays open (keep-alive), ready for the next request without another handshake.',f.seg('c','ACK'))
+       ];}},
+      {id:'redir',l:'Redirect (301)',d:'The page has moved. The server points the browser to the new address.',
+       actors:[{n:'Browser',s:'192.168.1.23'},{n:'Web server',s:'93.184.216.34:80'}],
+       steps:function(){var f=f80();return [
+        S(0,1,'GET /old','Request for the old address','The browser asks for /old.',f.seg('c','PSH,ACK',[H.get('/old')])),
+        S(1,0,'301 Moved Permanently','301 with a Location header','There is no body. The <b>Location</b> header gives the new address. A 301 says "always use the new one", so browsers and search engines remember it. (A 302 means "just this time".)',f.seg('s','PSH,ACK',[H.resp(301,'Moved Permanently',[['Location','http://example.com/new']].concat(SRV),null)])),
+        S(0,1,'GET /new','Browser follows automatically','The user sees nothing: the browser immediately requests the new path on the same connection.',f.seg('c','PSH,ACK',[H.get('/new')])),
+        S(1,0,'200 OK + HTML','The real page','This time the page itself arrives. Each redirect costs one full round trip, which is why long redirect chains make sites feel slow.',f.seg('s','PSH,ACK',[H.resp(200,'OK',[['Content-Type','text/html; charset=UTF-8']].concat(SRV),PAGE)]))
+       ];}},
+      {id:'post',l:'POST a form',d:'Send data to the server, such as logging in.',
+       actors:[{n:'Browser',s:'192.168.1.23'},{n:'Web server',s:'93.184.216.34:80'}],
+       steps:function(){var f=f80(),body='user=ana&password=hunter2';
+        var req=PK.textLayer('HTTP request','app','POST /login HTTP/1.1',[['Host','example.com'],['Content-Type','application/x-www-form-urlencoded'],['Content-Length',String(body.length)],['Connection','keep-alive']],body,{startName:'Request line',start:'POST sends data in the body, instead of asking for a page.',body:'The form fields, in plain text. Anyone who can see this packet can read the password.'});
+        return [
+        S(0,1,'POST /login','POST with a body','The data is in the <b>body</b>, described by Content-Type and Content-Length. Find the password in the ASCII column: over plain HTTP it is completely exposed. This is exactly what TLS prevents.',f.seg('c','PSH,ACK',[req])),
+        S(1,0,'302 Found + cookie','Login accepted: redirect and cookie','The server sends <b>Set-Cookie</b> with a session identifier and redirects to the home page. The browser will attach this cookie to every later request, which is how the server knows who you are.',f.seg('s','PSH,ACK',[H.resp(302,'Found',[['Location','/home'],['Set-Cookie','session=9f2c41ab7d; HttpOnly; Path=/']].concat(SRV),null)]))
+       ];}}
+    ],
+    quiz:[
+      {q:'What does a 301 response tell the browser?',o:['The page is missing','The resource moved permanently; use the Location header','The server crashed','You must log in'],a:1,h:'3xx means redirect.',x:'301 plus a Location header points to the new address, and may be cached.'},
+      {q:'Why is the Host header needed?',o:['To choose a server among many sites sharing one IP address','To encrypt the request','To set the cookie','To count hops'],a:0,h:'One address, many websites.',x:'Name-based virtual hosting lets one server answer for many domains.'},
+      {q:'What problem does keep-alive solve?',o:['Packet loss','Repeating the TCP handshake for every request','DNS caching','Cookie size'],a:1,h:'Opening a connection costs a round trip.',x:'Reusing the connection avoids a new handshake for each request.'}
+    ]
+  });
+
+  /* ---------------- HTTP/2 ---------------- */
+  function fr(typeN,type,flags,ftxt,sid,pay){
+    var len=H.sum(pay);
+    return PK.L('HTTP/2 frame: '+typeN,'app',[PK.f24('Length',len,'Size of the frame payload.',len+' bytes'),PK.f8('Type',type,'The kind of frame.',type+' ('+typeN+')'),PK.f8('Flags',flags,'Frame-specific flags, such as END_STREAM and END_HEADERS.',ftxt||'none'),PK.F('Stream ID',PK.u32(sid),sid===0?'0 (whole connection)':'stream '+sid,'Which request and response this frame belongs to. Stream 0 is for connection-level messages. Client streams are odd numbers.')].concat(pay));
+  }
+  function setting(id,v,nm){return PK.fraw('Setting: '+nm,PK.cat(PK.u16(id),PK.u32(v)),'A parameter the sender wants the peer to respect.',nm+' = '+v);}
+  var PRE=PK.L('HTTP/2 connection preface','app',[PK.fstr('Magic','PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n','A fixed 24-byte string every HTTP/2 client sends first. It is deliberately nonsense to HTTP/1.1 servers.')]);
+  function reqH(sid,path,first){
+    var pay=[PK.fraw('HPACK: :method GET',[0x82],'Index 2 in the static table: ":method: GET". One byte instead of 10.','indexed (1 byte)'),PK.fraw('HPACK: :scheme https',[0x87],'Index 7 in the static table.','indexed (1 byte)')];
+    if(path==='/')pay.push(PK.fraw('HPACK: :path /',[0x84],'Index 4 in the static table.','indexed (1 byte)'));
+    else pay.push(PK.fraw('HPACK: :path '+path,PK.cat([0x44,path.length],PK.strb(path)),'Literal value, with the name taken from the table.','literal: '+path));
+    if(first)pay.push(PK.fraw('HPACK: :authority example.com',PK.cat([0x41,11],PK.strb('example.com')),'Literal value, then added to the dynamic table, so later requests can refer to it with one byte.','literal, then remembered'));
+    else pay.push(PK.fraw('HPACK: :authority example.com',[0xbe],'Index 62 in the dynamic table: the entry we added on the first request. One byte instead of 13.','indexed from dynamic table (1 byte)'));
+    pay.push(PK.fraw('HPACK: accept-encoding',[0x90],'Static table entry: "gzip, deflate".','indexed (1 byte)'));
+    return fr('HEADERS',1,0x05,'END_STREAM, END_HEADERS',sid,pay);
+  }
+  function respH(sid,ctype,len){
+    return fr('HEADERS',1,0x04,'END_HEADERS',sid,[PK.fraw('HPACK: :status 200',[0x88],'Static table entry for ":status: 200".','indexed (1 byte)'),PK.fraw('HPACK: content-type',PK.cat([0x5f,ctype.length],PK.strb(ctype)),'Literal value for content-type.',ctype),PK.fraw('HPACK: content-length',PK.cat([0x5c,String(len).length],PK.strb(String(len))),'Literal value for content-length.',String(len))]);
+  }
+  function dataF(sid,str,end,seed){
+    var b=str?PK.strb(str):PK.rnd(seed?seed:200,seed?seed:5);
+    return fr('DATA',0,end?1:0,end?'END_STREAM':'none',sid,[PK.fraw('Data',b,'A chunk of the response body for this stream.',b.length+' bytes')]);
+  }
+  var BN='<b>Decrypted view.</b> On the wire, everything after the TCP header is wrapped in encrypted TLS records (see the TLS lab). Here the frames are shown as the browser and server see them.';
+  LAB.add({
+    id:'http2',n:'HTTP/2',name:'HTTP/2: many requests on one connection',kind:'app',rto:1000,
+    tagline:'Binary frames, compressed headers and multiplexing: a faster way to speak HTTP.',
+    why:'HTTP/1.1 handles one request at a time per connection, so browsers open several connections and still queue. HTTP/2 splits everything into small tagged frames. Each frame names its stream, so many requests and responses share one TCP connection, interleaved. Headers are compressed with HPACK because most repeat from one request to the next.',
+    ideas:[['Streams and frames','Every request and response is a numbered stream made of frames. Frames from different streams can be mixed freely.'],['HPACK','Repeated headers shrink to a single byte by pointing at a table both sides keep in step.'],['One slow packet blocks all','All streams share one TCP byte stream. A single lost segment stalls every stream behind it. HTTP/3 removes that.']],
+    facts:[['Layer','Application'],['Transport','TCP + TLS, port 443'],['Negotiated by','ALPN extension in the TLS handshake'],['Successor','HTTP/3 over QUIC']],
+    dropNote:'TCP resends it. Notice that every stream waits.',
+    scenarios:[
+      {id:'one',l:'Connection and one request',d:'Preface, settings exchange, then a single request and response.',
+       actors:[{n:'Browser',s:'192.168.1.23'},{n:'Server',s:'93.184.216.34:443'}],
+       steps:function(){var f=f443(),m={meta:{banner:BN}};return [
+        S(0,1,'preface + SETTINGS','Connection preface and settings','The client sends the 24-byte magic string followed by a <b>SETTINGS</b> frame on stream 0, which is reserved for the connection itself.',f.seg('c','PSH,ACK',[PRE,fr('SETTINGS',4,0,'none',0,[setting(3,100,'MAX_CONCURRENT_STREAMS'),setting(4,6291456,'INITIAL_WINDOW_SIZE')])],m)),
+        S(1,0,'SETTINGS + ACK','Server settings and acknowledgement','The server sends its own settings and acknowledges the client\'s (an empty SETTINGS frame with the ACK flag).',f.seg('s','PSH,ACK',[fr('SETTINGS',4,0,'none',0,[setting(3,128,'MAX_CONCURRENT_STREAMS')]),fr('SETTINGS',4,1,'ACK',0,[])],m)),
+        S(0,1,'SETTINGS ACK + GET /','The first request, on stream 1','A HEADERS frame on <b>stream 1</b> carries the request. The headers are HPACK-compressed: indexed entries are just one byte. END_STREAM means no body follows.',f.seg('c','PSH,ACK',[fr('SETTINGS',4,1,'ACK',0,[]),reqH(1,'/',true)],m)),
+        S(1,0,'HEADERS + DATA (stream 1)','Response on stream 1','The response HEADERS frame and then a DATA frame with END_STREAM, all tagged with stream 1.',f.seg('s','PSH,ACK',[respH(1,'text/html',PAGE.length),dataF(1,PAGE,true)],m))
+       ];}},
+      {id:'mux',l:'Multiplexing',d:'Three files requested at once on one connection. Their responses interleave.',
+       actors:[{n:'Browser',s:'192.168.1.23'},{n:'Server',s:'93.184.216.34:443'}],
+       steps:function(){var f=f443(),m={meta:{banner:BN}};return [
+        S(0,1,'3 requests (streams 1, 3, 5)','Three requests in one segment','The browser needs a page, a stylesheet and a script. It sends all three HEADERS frames together, on streams 1, 3 and 5. Look at the second and third: <b>:authority</b> is a single byte now.',f.seg('c','PSH,ACK',[reqH(1,'/',true),reqH(3,'/style.css',false),reqH(5,'/app.js',false)],m)),
+        S(1,0,'3 response HEADERS','Responses start together','The server answers all three at once.',f.seg('s','PSH,ACK',[respH(1,'text/html',400),respH(3,'text/css',200),respH(5,'text/javascript',200)],m)),
+        S(1,0,'DATA 3, DATA 1, DATA 5','Data frames interleave','The small stylesheet finishes first (END_STREAM on stream 3) even though the page was requested first. Nobody waits in line: this is multiplexing.',f.seg('s','PSH,ACK',[dataF(3,null,true,200),dataF(1,null,false,200),dataF(5,null,true,200)],m)),
+        S(1,0,'DATA 1 (end)','The rest of the page','Stream 1 completes. With HTTP/1.1, the browser would have needed three connections, or waited in turn.',f.seg('s','PSH,ACK',[dataF(1,null,true,200)],m))
+       ];}},
+      {id:'hol',l:'One lost packet stalls all',d:'TCP\'s head-of-line blocking: a loss in one stream delays every stream.',
+       actors:[{n:'Browser',s:'192.168.1.23'},{n:'Server',s:'93.184.216.34:443'}],
+       steps:function(){var f=f443(),m={meta:{banner:BN}},sq=f.nxt.s;
+        var a=f.seg('s','ACK',[dataF(1,null,true,1000)],m),b=f.seg('s','ACK',[dataF(3,null,true,1000)],m),c=f.seg('s','ACK',[dataF(5,null,true,1000)],m);
+        var rt=PK.pkt({eth:H.in,ip:{src:H.web,dst:H.lap,ttl:56,id:0x7c20,df:true},tcp:{sp:443,dp:51514,seq:(sq+1000+1000)>>>0,ack:b.layers[2].f[3].b?(f.nxt.c>>>0):0,flags:'ACK',win:509,opts:[PK.tcpo.nop(),PK.tcpo.nop(),PK.tcpo.ts(903311999,1823400200)]},app:[dataF(3,null,true,1000)],meta:m.meta});
+        return [
+        S(1,0,'DATA stream 1','Stream 1 arrives','Three responses are being sent as three TCP segments. The first arrives.',a,{hop:0.5}),
+        S(1,0,'DATA stream 3 (lost)','Stream 3\'s segment is lost','The network drops it.',b,{lost:true,lostText:'The segment carrying stream 3\'s data never arrives.',hop:0.5}),
+        S(1,0,'DATA stream 5','Stream 5 arrives, but waits','It reached the computer, but TCP must deliver bytes <b>in order</b>. It cannot hand stream 5\'s data to the browser until the earlier gap is filled.',c,{hop:0.5}),
+        N(0,'streams 3 and 5 stalled','Head-of-line blocking','The browser has stream 5\'s bytes but cannot read them. TCP knows nothing about streams, only about one ordered byte stream. This is the weakness HTTP/3 fixes by giving every stream its own loss recovery.',{st:{0:'stalled'}}),
+        S(1,0,'DATA stream 3 again','Retransmission fills the gap','After the retransmission arrives, both stream 3 and stream 5 are released at once. They waited because of a loss that affected only stream 3.',rt,{hop:0.5,extraWait:250,st:{0:'all delivered'}})
+       ];}}
+    ],
+    quiz:[
+      {q:'What lets HTTP/2 share one connection among many requests?',o:['Frames tagged with a stream ID','Using UDP','More ports','Bigger packets'],a:0,h:'Look at the frame header.',x:'Every frame carries a stream ID, so frames from different requests can be interleaved.'},
+      {q:'What does HPACK do?',o:['Encrypts headers','Compresses headers using shared tables','Orders frames','Opens streams'],a:1,h:'Headers repeat a lot.',x:'Both sides maintain a table so repeated headers are replaced by a one-byte index.'},
+      {q:'Why does one lost packet hurt every HTTP/2 stream?',o:['HTTP/2 has no error handling','All streams ride one ordered TCP byte stream','Packets are too large','TLS fails'],a:1,h:'TCP delivers bytes in strict order.',x:'TCP cannot release later bytes until the missing one arrives, even if they belong to other streams.'}
+    ]
+  });
+
+  /* ---------------- QUIC ---------------- */
+  var DC=[0x83,0x94,0xc8,0xf0,0x3e,0x51,0xc5,0x7a],SC=[0xe7,0x21,0x6a,0x09,0xb4,0x3d,0x18,0x52];
+  function vint2(n){return [0x40|((n>>8)&0x3f),n&255];}
+  function qlong(first,ftxt,payLen,seed,name,token){
+    var f=[
+      PK.F('Header form + type',[first],ftxt,'The first bit says long header. Two more bits say which packet type. The low bits are hidden by header protection on the wire.'),
+      PK.f32('Version',1,'1 means QUIC version 1.','0x00000001 (QUIC v1)'),
+      PK.F('Destination connection ID',PK.cat([8],DC),'ID chosen by the receiver',  'Identifies the connection independent of IP addresses and ports. That is what makes migration possible.')
+    ];
+    f[2].v=PK.hexs(DC);f[2].d='Connection identifier chosen by the receiver. Unlike a TCP 4-tuple it does not depend on IP addresses or ports, which makes migration possible.';
+    f.push(PK.F('Source connection ID',PK.cat([8],SC),PK.hexs(SC),'The sender\'s own connection ID.'));
+    if(token)f.push(PK.f8('Token length',0,'No address-validation token.'));
+    f.push(PK.F('Length',vint2(payLen+2),(payLen+2)+' bytes','Length of packet number plus payload, as a variable-length integer.'));
+    f.push(PK.F('Packet number',[0x00,0x00],'protected','The packet number, hidden by header protection.'));
+    f.push(PK.fraw('Protected payload',PK.rnd(payLen,seed),'Encrypted frames (CRYPTO, ACK, STREAM...). Initial packets use keys derived from the connection ID, so they are only obfuscated. Handshake and 1-RTT packets use real secret keys.',payLen+' bytes, encrypted'));
+    return PK.L(name,'sec',f);
+  }
+  function qshort(payLen,seed,name){
+    return PK.L(name||'QUIC short header (1-RTT)','sec',[
+      PK.F('Header form',[0x43],'short header','Bit 0 is zero: a short header, used once the handshake is done.'),
+      PK.F('Destination connection ID',DC,PK.hexs(DC),'The receiver\'s connection ID. This, not the IP address, tells the server which connection this is.'),
+      PK.F('Packet number',[0x00,0x07],'protected','Hidden by header protection.'),
+      PK.fraw('Protected payload',PK.rnd(payLen,seed),'Encrypted STREAM frames carrying HTTP/3. Even the ACKs and stream data are encrypted, so middleboxes cannot meddle.',payLen+' bytes, encrypted')
+    ]);
+  }
+  function qpk(dir,layers,o){o=o||{};var out=dir==='out';return PK.pkt({eth:o.eth||(out?H.out:H.in),ip:{src:out?(o.src||H.lap):H.web,dst:out?H.web:(o.dst||H.lap),ttl:out?64:57,id:o.id||0x2200},udp:{sp:out?49812:443,dp:out?443:49812},app:layers});}
+  LAB.add({
+    id:'quic',n:'QUIC',name:'QUIC and HTTP/3: a modern transport on UDP',kind:'trans',extra:'budget',rto:1000,
+    tagline:'Transport and security in a single handshake, with independent streams and connections that survive a change of network.',
+    why:'TCP and TLS were designed separately, so a new connection needs two stacked handshakes. QUIC merges them into one and runs over UDP so it can be updated in software instead of waiting for operating systems and routers. It gives every stream independent loss recovery, which ends head-of-line blocking, and identifies connections by an ID instead of an address, so a phone can move from Wi-Fi to cellular without breaking downloads.',
+    ideas:[['One handshake','Encryption and transport setup happen together: one round trip to a fresh server, zero to a known one.'],['No head-of-line blocking','Loss on one stream only delays that stream. Other streams keep flowing.'],['Connection IDs','Connections are named by an ID, so changing IP address does not kill them.'],['Always encrypted','Nearly everything, including packet numbers and ACKs, is hidden from the network.']],
+    facts:[['Layer','Transport, on top of UDP'],['Port','UDP 443'],['Carries','HTTP/3'],['Standard','RFC 9000 (2021)']],
+    dropNote:'QUIC notices the missing packet from later acknowledgements, or after a timeout, and resends the lost data in a new packet.',
+    scenarios:[
+      {id:'new',l:'New connection',d:'A first visit: transport and TLS 1.3 handshake combined, then the first request.',
+       actors:[{n:'Browser',s:'192.168.1.23'},{n:'Server',s:'93.184.216.34:443'}],
+       steps:function(){return [
+        S(0,1,'Initial (ClientHello)','Initial packet, padded to 1,200 bytes','Inside the encrypted payload is a TLS 1.3 ClientHello. Client Initial datagrams must be at least 1,200 bytes, which limits abuse of servers for traffic amplification.',qpk('out',[qlong(0xc1,'0xc1 (long header, Initial)',1172,1,'QUIC Initial packet',true)])),
+        S(1,0,'Initial + Handshake','Server flight: two packets in one datagram','Packets of different encryption levels are <b>coalesced</b> into one UDP datagram: the Initial (ServerHello) and a Handshake packet (certificate, Finished).',qpk('in',[qlong(0xc1,'0xc1 (long header, Initial)',110,2,'QUIC Initial packet',true),qlong(0xe1,'0xe1 (long header, Handshake)',1000,3,'QUIC Handshake packet',false)])),
+        S(0,1,'Handshake + 1-RTT request','Client finishes and already asks for the page','The browser confirms the handshake and in the same datagram sends the HTTP/3 request in a 1-RTT packet with a short header. The page request needed only one round trip of setup.',qpk('out',[qlong(0xe1,'0xe1 (long header, Handshake)',60,4,'QUIC Handshake packet',false),qshort(130,5)])),
+        S(1,0,'1-RTT response','The page arrives','The server answers on the same stream.',qpk('in',[qshort(900,6)]))
+       ];}},
+      {id:'zero',l:'0-RTT resumption',d:'A returning visitor sends the request with its very first packet.',
+       actors:[{n:'Browser',s:'192.168.1.23'},{n:'Server',s:'93.184.216.34:443'}],
+       steps:function(){return [
+        S(0,1,'Initial + 0-RTT request','The request rides in the first flight','The browser remembers a key from a previous visit (a session ticket), so it can encrypt a request right away in a <b>0-RTT</b> packet next to the Initial. No waiting for the server at all.',qpk('out',[qlong(0xc1,'0xc1 (long header, Initial)',600,11,'QUIC Initial packet',true),qlong(0xd1,'0xd1 (long header, 0-RTT)',545,12,'QUIC 0-RTT packet',false)])),
+        S(1,0,'Initial + Handshake + response','Server answers with the page','The response comes back with the handshake in the same flight. The page arrived after only one round trip in total.',qpk('in',[qlong(0xc1,'0xc1 (long header, Initial)',110,13,'QUIC Initial packet',true),qlong(0xe1,'0xe1 (long header, Handshake)',500,14,'QUIC Handshake packet',false),qshort(500,15)])),
+        N(0,'replay risk','Why only safe requests','0-RTT data can be replayed by an attacker who copies the packet. So browsers only use it for requests that are safe to repeat, such as GET.',{})
+       ];}},
+      {id:'mig',l:'Connection migration',d:'A phone walks out of Wi-Fi range and continues on cellular without losing its connection.',
+       actors:[{n:'Phone',s:'192.168.1.23 (Wi-Fi)'},{n:'Server',s:'93.184.216.34:443'}],
+       steps:function(){return [
+        S(0,1,'download request (Wi-Fi)','Normal traffic over Wi-Fi','Source IP 192.168.1.23. The short header carries the server\'s connection ID.',qpk('out',[qshort(130,21)])),
+        N(0,'switches to cellular','The network changes','Wi-Fi drops. The phone now has a new IP address, 100.64.8.9. A TCP connection would be broken here because its identity <b>is</b> the address and port pair.',{st:{0:'100.64.8.9 (cellular)'}}),
+        S(0,1,'same connection ID, new IP','Same connection, new address','The phone sends the next packet from the new address with the <b>same connection ID</b>. The server recognises the connection, checks the new path with a challenge, and carries on.',qpk('out',[qshort(130,22)],{src:'100.64.8.9',eth:['3c:22:fb:4a:91:0f','9c:3d:cf:0b:7e:50']}),{st:{1:'path validated'}}),
+        S(1,0,'download continues','The download goes on','The server now sends to the new address. The user noticed nothing.',qpk('in',[qshort(900,23)],{dst:'100.64.8.9',eth:['9c:3d:cf:0b:7e:50','3c:22:fb:4a:91:0f']}))
+       ];}}
+    ],
+    quiz:[
+      {q:'Why is QUIC built on UDP rather than being a new IP protocol?',o:['UDP is encrypted','Routers and firewalls already pass UDP, and it can be updated in software','UDP is faster than IP','TCP forbids it'],a:1,h:'New IP protocol numbers are blocked by many middleboxes.',x:'Running over UDP gets through existing networks and lets QUIC be updated in applications.'},
+      {q:'What lets a QUIC connection survive a switch from Wi-Fi to cellular?',o:['A bigger window','Connection IDs','Forward error correction','Checksums'],a:1,h:'TCP uses the address and port pair.',x:'The connection ID identifies the connection regardless of IP address or port.'},
+      {q:'What risk does 0-RTT data carry?',o:['It is unencrypted','It can be replayed by an attacker','It is slower','It uses more bandwidth'],a:1,h:'An attacker can copy the packet.',x:'Servers may process a replayed 0-RTT request twice, so only safe requests should use it.'}
+    ]
+  });
+
+  /* ---------------- WebSocket ---------------- */
+  function wsFrame(op,payload,masked,fname,desc){
+    var b=PK.strb(payload),key=[0x37,0xfa,0x21,0x3d],fs=[];
+    var fin=0x80|op,ln=b.length;
+    fs.push(PK.F('FIN + opcode',[fin],'FIN, '+fname,'FIN set means this is the last (here, only) fragment. The opcode says what kind of frame: 1 text, 2 binary, 8 close, 9 ping, 10 pong.'));
+    fs.push(PK.F('Mask + length',[(masked?0x80:0)|ln],(masked?'masked, ':'not masked, ')+ln+' bytes','The top bit says whether the payload is masked. Clients must mask; servers must not. The rest is the payload length (up to 125 here).'));
+    if(masked){
+      fs.push(PK.fraw('Masking key',key,'Four random bytes the client XORs into the payload. This prevents buggy proxies from mistaking the data for HTTP.',PK.hexs(key)));
+      if(ln)fs.push(PK.fraw('Masked payload',b.map(function(x,i){return x^key[i%4];}),'The payload XOR the masking key. The server undoes it.','"'+payload+'" (masked)'));
+    }else if(ln)fs.push(PK.fraw('Payload',b,desc||'The message.','"'+payload+'"'));
+    return PK.L('WebSocket frame','app',fs);
+  }
+  LAB.add({
+    id:'ws',n:'WebSocket',name:'WebSocket: a two-way channel',kind:'app',rto:1000,
+    tagline:'After one HTTP upgrade, either side can send messages at any time with tiny overhead.',
+    why:'HTTP is request and response: the server can only speak when asked. For chat, live scores and collaborative editing, that forces polling, asking again and again. A WebSocket starts as a normal HTTP request, asks to <i>upgrade</i>, and then turns the same TCP connection into a persistent channel where either side can send small frames whenever it wants.',
+    ideas:[['Upgrade handshake','An HTTP request with Upgrade: websocket. A 101 response means "we are no longer speaking HTTP".'],['Tiny frames','A message costs 2 to 6 bytes of framing, versus hundreds of bytes of headers per HTTP request.'],['Server push','The server can send the moment something happens, with no polling delay.']],
+    facts:[['Layer','Application'],['Transport','TCP, port 80 (ws://) or 443 (wss://)'],['Frames','text, binary, ping, pong, close'],['Client masking','Required, to protect proxies']],
+    dropNote:'TCP underneath resends the segment, so the message still arrives, only later.',
+    scenarios:[
+      {id:'chat',l:'Upgrade and chat',d:'Open a WebSocket, exchange messages in both directions, and close it.',
+       actors:[{n:'Browser',s:'192.168.1.23'},{n:'Chat server',s:'93.184.216.34:80'}],
+       steps:function(){var f=f80();
+        var up=PK.textLayer('HTTP request','app','GET /chat HTTP/1.1',[['Host','example.com'],['Upgrade','websocket'],['Connection','Upgrade'],['Sec-WebSocket-Key','dGhlIHNhbXBsZSBub25jZQ=='],['Sec-WebSocket-Version','13']],null,{startName:'Request line',start:'An ordinary GET, asking to switch protocols.',h:{Upgrade:'Asks to switch to the websocket protocol.','Sec-WebSocket-Key':'A random value the server must transform and return, proving it understands WebSocket.'}});
+        var ok=PK.textLayer('HTTP response','app','HTTP/1.1 101 Switching Protocols',[['Upgrade','websocket'],['Connection','Upgrade'],['Sec-WebSocket-Accept','s3pPLMBiTxaQ9kYGzzhZRbK+xOo=']],null,{startName:'Status line',start:'101 means the server agrees to switch protocols.',h:{'Sec-WebSocket-Accept':'The key from the request, combined with a fixed string, then hashed. It proves the server really speaks WebSocket.'}});
+        return [
+        S(0,1,'GET /chat (Upgrade)','HTTP request asking to upgrade','An ordinary HTTP request with <b>Upgrade: websocket</b> and a random key.',f.seg('c','PSH,ACK',[up])),
+        S(1,0,'101 Switching Protocols','Server agrees','Status <b>101</b>. From the next byte onward this TCP connection no longer carries HTTP.',f.seg('s','PSH,ACK',[ok]),{st:{0:'WebSocket open',1:'WebSocket open'}}),
+        S(0,1,'text frame "hello"','Client sends a message','Look at the size: the whole frame is just a few bytes beyond the text. The payload is <b>masked</b> with a random key, so it no longer reads as "hello" in the ASCII column.',f.seg('c','PSH,ACK',[wsFrame(1,'hello',true,'text')])),
+        S(1,0,'text frame (push)','Server pushes a message by itself','Nobody asked. The server sends the instant something happens. Server frames are not masked.',f.seg('s','PSH,ACK',[wsFrame(1,'{"from":"Ana","text":"hey!"}',false,'text')])),
+        S(1,0,'ping','Ping keeps the connection alive','Tiny control frames let each side check the other is still there. Idle connections are otherwise closed by NATs and proxies.',f.seg('s','PSH,ACK',[wsFrame(9,'',false,'ping')])),
+        S(0,1,'pong','Pong','The reply, masked because it comes from a client.',f.seg('c','PSH,ACK',[wsFrame(10,'',true,'pong')])),
+        S(0,1,'close frame','Client closes','A close frame (opcode 8) with a status code, then TCP closes normally.',f.seg('c','PSH,ACK',[PK.L('WebSocket frame','app',[PK.F('FIN + opcode',[0x88],'FIN, close','Close frame.'),PK.F('Mask + length',[0x82],'masked, 2 bytes','Payload is the 2-byte status code.'),PK.fraw('Masking key',[0x37,0xfa,0x21,0x3d],'Four random bytes.','0x37fa213d'),PK.fraw('Masked status code',[0x03^0x37,0xe8^0xfa],'Status 1000, "normal closure", XOR the masking key.','1000 (masked)')])]),{st:{0:'closing',1:'closing'}})
+       ];}},
+      {id:'poll',l:'Polling vs WebSocket',d:'Without WebSockets the browser must keep asking "anything new?". Compare the bytes.',
+       actors:[{n:'Browser',s:'192.168.1.23'},{n:'Server',s:'93.184.216.34:80'}],
+       steps:function(){var f=f80(),ck=[['Cookie','session=9f2c41ab7d; theme=dark; lang=en-US']],tot=0,out=[];
+        function poll(n,body){
+          var rq=f.seg('c','PSH,ACK',[H.get('/updates',ck)]),rs=f.seg('s','PSH,ACK',[H.resp(200,'OK',[['Content-Type','application/json']].concat(SRV),body)]);
+          tot+=rq.len+rs.len;
+          out.push(S(0,1,'GET /updates (poll '+n+')','Poll '+n+': "anything new?"','A complete request with all its headers and cookie, '+rq.len+' bytes, just to ask.',rq));
+          out.push(S(1,0,body==='{"new":0}'?'200: nothing new':'200: 1 new message','Answer '+n,body==='{"new":0}'?'Nothing has happened. The server must still answer in full, '+rs.len+' bytes.':'The message finally arrives, but only because this poll happened after it was written. It could have waited up to the full polling interval.',rs));
+        }
+        poll(1,'{"new":0}');poll(2,'{"new":0}');poll(3,'{"msg":"hey!"}');
+        var one=wsFrame(1,'{"msg":"hey!"}',false,'text'),pk=PK.pkt({eth:H.in,ip:{src:H.web,dst:H.lap,ttl:57,id:1},tcp:{sp:80,dp:51514,seq:1,ack:1,flags:'PSH,ACK',opts:[]},app:[one]});
+        out.push(N(0,'polling cost '+PK.num(tot)+' bytes','The cost of polling','Three polls cost <b>'+PK.num(tot)+' bytes</b> on the wire (Ethernet, IP and TCP headers included) and delayed the message. A WebSocket delivers the same message in one frame of <b>'+PK.num(pk.len)+' bytes</b> (also with those headers), the moment it happens.'));
+        return out;}}
+    ],
+    quiz:[
+      {q:'What does a 101 response mean?',o:['Not found','The server agrees to switch protocols','Redirect','Server error'],a:1,h:'The request included an Upgrade header.',x:'101 Switching Protocols confirms the connection now speaks WebSocket.'},
+      {q:'Why do clients mask WebSocket payloads?',o:['To compress them','To stop misbehaving proxies from misreading the data as HTTP','For privacy','To save bandwidth'],a:1,h:'It is not encryption.',x:'Masking uses a random key to keep attacker-chosen bytes from looking like HTTP to old proxies. It does not hide the data.'},
+      {q:'What is the main advantage over polling?',o:['The server can push instantly and with far less overhead','It uses UDP','It is encrypted by default','It needs no server'],a:0,h:'Think about the idle requests.',x:'No repeated headers and no delay between event and delivery.'}
+    ]
+  });
+
+  /* ---------------- BGP ---------------- */
+  var BM=[0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff];
+  function bgp(type,tname,body,desc){
+    return PK.L('BGP '+tname,'app',[PK.fraw('Marker',BM,'Sixteen bytes of 0xff. A leftover from an authentication scheme, now a sync pattern.','16 × 0xff'),PK.f16('Length',19+H.sum(body),'Size of the whole message.',(19+H.sum(body))+' bytes'),PK.f8('Type',type,desc,type+' ('+tname+')')].concat(body));
+  }
+  function bopen(as,id){return bgp(1,'OPEN',[PK.f8('Version',4,'BGP version 4.'),PK.f16('My AS',as,'The sender\'s autonomous system number: the identity of its network.','AS'+as),PK.f16('Hold time',90,'Seconds without a message before the peer is declared dead.','90 s'),PK.fip('BGP identifier',id,'A unique ID for this router.'),PK.f8('Optional parameters length',0,'None.')],'Introduces the sender.');}
+  function bkeep(){return bgp(4,'KEEPALIVE',[],'Just a header: "I am still here." Sent about every 30 seconds.');}
+  function bupd(o){
+    var attrs=[];
+    if(o.path){
+      attrs.push(PK.fraw('Path attribute: ORIGIN',[0x40,1,1,0],'How the route began. 0 means IGP: it came from inside the originating network.','IGP'));
+      attrs.push(PK.fraw('Path attribute: AS_PATH',PK.cat([0x40,2,2+2*o.path.length,2,o.path.length],o.path.reduce(function(a,x){return a.concat(PK.u16(x));},[])),'The list of networks this route crossed. Loop prevention and a basic distance measure.','AS_SEQUENCE '+o.path.join(' ')));
+      attrs.push(PK.fraw('Path attribute: NEXT_HOP',PK.cat([0x40,3,4],PK.ipb(o.nh)),'The router to send traffic to for this prefix.',o.nh));
+    }
+    var pre=function(p){var l=p.split('/'),n=Number(l[1]),o4=PK.ipb(l[0]).slice(0,Math.ceil(n/8));return PK.cat([n],o4);};
+    var wd=(o.wd||[]).map(function(p){return PK.fraw('Withdrawn route',pre(p),'A prefix this sender can no longer reach.',p);});
+    var nl=(o.nlri||[]).map(function(p){return PK.fraw('NLRI (reachable prefix)',pre(p),'A block of addresses this sender can deliver to. A longer prefix is more specific.',p);});
+    var body=[PK.f16('Withdrawn routes length',H.sum(wd),'Bytes of withdrawn routes below.',H.sum(wd)+' bytes')].concat(wd,[PK.f16('Path attributes length',H.sum(attrs),'Bytes of path attributes below.',H.sum(attrs)+' bytes')],attrs,nl);
+    return bgp(2,'UPDATE',body,'Announces new routes or withdraws old ones.');
+  }
+  var E1=['02:00:00:aa:00:01','02:00:00:bb:00:02'];
+  function bflow(c,sp,s,e){return H.est(H.flow(c,sp,s,179,{ethOut:e,ethIn:[e[1],e[0]]}));}
+  LAB.add({
+    id:'bgp',n:'BGP',name:'BGP: how networks find each other',kind:'net',lan:true,hop:'lan',rto:1000,
+    tagline:'The routing protocol of the whole internet: thousands of independent networks telling each other what they can reach.',
+    why:'Inside your home or company, routers use internal protocols. Between the roughly 100,000 independent networks that make up the internet (called autonomous systems), routers speak BGP. Each network announces the address blocks it can reach and the path to them. Routers choose the best path for each block, and the whole internet\'s map is the sum of these announcements.',
+    ideas:[['Prefix announcements','"I can reach 198.51.100.0/24 via AS64501." Neighbours pass the route on, adding their own AS number to the path.'],['Trust-based','BGP believes what neighbours say. A wrong announcement can redirect traffic for a whole region.'],['Most specific wins','A /25 beats a /24 because routers prefer the longest matching prefix. That is how hijacks work.']],
+    facts:[['Layer','Application, over TCP'],['Port','TCP 179'],['Messages','OPEN, UPDATE, KEEPALIVE, NOTIFICATION'],['Defence','RPKI route origin validation, prefix filters']],
+    dropNote:'TCP resends the segment. BGP itself relies on TCP for reliability.',
+    scenarios:[
+      {id:'peer',l:'Peering and announcement',d:'Two networks establish a BGP session, then one announces its address block.',
+       actors:[{n:'ISP A',s:'AS64500 192.0.2.1'},{n:'ISP B',s:'AS64501 192.0.2.2'}],
+       steps:function(){var f=bflow('192.0.2.1',41234,'192.0.2.2',E1);return [
+        N(0,'TCP port 179 open','A TCP connection comes first','The two routers first open an ordinary TCP connection to port 179, as in the TCP lab. BGP messages travel inside it.',{st:{0:'Connect',1:'Active'}}),
+        S(0,1,'OPEN AS64500','OPEN: who I am','Each side states its AS number, a hold time and a router ID.',f.seg('c','PSH,ACK',[bopen(64500,'192.0.2.1')]),{st:{0:'OpenSent'}}),
+        S(1,0,'OPEN AS64501','OPEN from the neighbour','The peer answers with its own details.',f.seg('s','PSH,ACK',[bopen(64501,'192.0.2.2')]),{st:{1:'OpenConfirm'}}),
+        S(0,1,'KEEPALIVE','KEEPALIVE: terms accepted','A 19-byte message: just a header.',f.seg('c','PSH,ACK',[bkeep()])),
+        S(1,0,'KEEPALIVE','KEEPALIVE back','Both sides are now in the <b>Established</b> state.',f.seg('s','PSH,ACK',[bkeep()]),{st:{0:'Established',1:'Established'}}),
+        S(1,0,'UPDATE 198.51.100.0/24','UPDATE: an announcement','ISP B announces that it can deliver <b>198.51.100.0/24</b>. The AS_PATH is just its own AS. When ISP A passes the route to others it will add AS64500 in front.',f.seg('s','PSH,ACK',[bupd({path:[64501],nh:'192.0.2.2',nlri:['198.51.100.0/24']})]),{st:{0:'route learned'}}),
+        N(0,'installs the route','The routing table grows','ISP A now sends traffic for any address in 198.51.100.0 to 198.51.100.255 toward ISP B.',{})
+       ];}},
+      {id:'wd',l:'Route withdrawal',d:'A network loses its path and tells the world to stop sending traffic.',
+       actors:[{n:'ISP A',s:'AS64500 192.0.2.1'},{n:'ISP B',s:'AS64501 192.0.2.2'}],
+       steps:function(){var f=bflow('192.0.2.1',41234,'192.0.2.2',E1);return [
+        N(1,'link to customer fails','Something breaks','ISP B can no longer reach 198.51.100.0/24.',{st:{1:'prefix lost'}}),
+        S(1,0,'UPDATE withdraw /24','UPDATE with a withdrawn route','This UPDATE has no path attributes and no NLRI, only <b>Withdrawn routes</b>. It is the entire message: the prefix is gone.',f.seg('s','PSH,ACK',[bupd({wd:['198.51.100.0/24']})]),{st:{0:'route removed'}}),
+        N(0,'finds another path or none','Traffic reroutes','Other routers pick a different path to the prefix if one exists. If none does, the destination becomes unreachable. A single bad UPDATE of this kind has taken large sites offline for hours.',{}),
+        S(0,1,'KEEPALIVE','The session stays up','Only the route was withdrawn. The peering session itself carries on, kept alive every 30 seconds.',f.seg('c','PSH,ACK',[bkeep()]))
+       ];}},
+      {id:'hijack',l:'Route hijack',d:'A rogue network announces a more specific prefix and pulls traffic toward itself.',
+       actors:[{n:'ISP A',s:'AS64500'},{n:'Victim ISP B',s:'AS64501'},{n:'Rogue AS',s:'AS64666'}],
+       steps:function(){var f1=bflow('192.0.2.1',41234,'192.0.2.2',E1),f2=bflow('192.0.2.66',41300,'192.0.2.1',['02:00:00:cc:00:66','02:00:00:aa:00:01']);return [
+        S(1,0,'UPDATE 198.51.100.0/24','The legitimate route','Victim ISP B owns 198.51.100.0/24 and announces it correctly. Traffic flows to B.',f1.seg('s','PSH,ACK',[bupd({path:[64501],nh:'192.0.2.2',nlri:['198.51.100.0/24']})]),{st:{0:'/24 via AS64501'}}),
+        S(2,0,'UPDATE 198.51.100.0/25','The rogue announces half of it','The rogue network, by mistake or malice, announces a <b>/25</b>: a more specific slice of the same block. Nothing in BGP proves it has any right to.',f2.seg('c','PSH,ACK',[bupd({path:[64666],nh:'192.0.2.66',nlri:['198.51.100.0/25']})]),{st:{0:'/25 via AS64666'}}),
+        N(0,'longest prefix wins','Traffic is diverted','Routers always prefer the <b>longest matching prefix</b>, so traffic for the first half of the victim\'s addresses now flows to the rogue network, which can drop, inspect or tamper with it.',{}),
+        N(1,'defences','How the internet defends','Networks can filter what their customers announce, and RPKI lets owners sign which AS may originate a prefix, so unauthorised announcements are rejected.',{})
+       ];}}
+    ],
+    quiz:[
+      {q:'What does an AS_PATH contain?',o:['IP addresses of routers','The AS numbers a route has passed through','Port numbers','Encryption keys'],a:1,h:'It helps prevent loops.',x:'It lists the autonomous systems a route crossed, and each network adds its own number.'},
+      {q:'Why does a more specific /25 beat a /24?',o:['It is newer','Routers choose the longest matching prefix','It has a lower TTL','BGP prefers small numbers'],a:1,h:'More detail means a better match.',x:'Longest-prefix match is how IP forwarding works, and BGP feeds it.'},
+      {q:'Which message ends a route, not the whole session?',o:['OPEN','KEEPALIVE','UPDATE with withdrawn routes','NOTIFICATION'],a:2,h:'It carries a list of prefixes.',x:'An UPDATE can withdraw routes while the session stays up.'}
+    ]
+  });
+})();
+/* ===== Lab: proxies ===== */
+(function(){
+  var S=H.S,N=H.N,PX='192.168.1.5',PXM='a4:83:e7:11:22:33',PXW='a4:83:e7:11:22:34';
+  var LE=[H.lapMac,PXM],LI=[PXM,H.lapMac],WE=[PXW,H.ispMac],WI=[H.ispMac,PXW];
+  var PAGE='<!doctype html><html><head><title>Example Domain</title></head><body><h1>Example Domain</h1><p>Hello!</p></body></html>';
+  var SRV=[['Server','ECS (nyb/1D2E)']];
+  function lp(){return H.est(H.flow(H.lap,51600,PX,3128,{ethOut:LE,ethIn:LI}));}
+  function pw(){return H.est(H.flow(PX,40100,H.web,80,{ethOut:WE,ethIn:WI}));}
+  function fwdReq(){return PK.textLayer('HTTP request','app','GET http://example.com/ HTTP/1.1',[['Host','example.com'],['User-Agent','Mozilla/5.0'],['Accept','text/html'],['Proxy-Connection','keep-alive']],null,{startName:'Request line',start:'Sent to a proxy, so the target is a full URL (scheme and host included). A normal server request has only the path.',h:{'Proxy-Connection':'Asks the proxy to keep this connection open.'}});}
+  function viaResp(hit,age){var h=[['Content-Type','text/html; charset=UTF-8']].concat(SRV,[['Via','1.1 proxy.corp (squid)'],['X-Cache',hit?'HIT':'MISS']]);if(hit)h.push(['Age',String(age)]);return H.resp(200,'OK',h,PAGE);}
+  LAB.add({
+    id:'proxy',n:'Proxies',name:'Proxies: forward, reverse and tunnels',kind:'app',rto:1000,hop:1,
+    tagline:'A proxy is a middleman that makes requests on behalf of someone else. Where it sits decides what it is good for.',
+    why:'A <b>forward proxy</b> sits near the clients (a company or school network) and fetches websites for them. A <b>reverse proxy</b> sits in front of servers (a load balancer, CDN or API gateway) and receives requests on their behalf. Both split one conversation into two connections, and that split is where all the benefits come from: caching, filtering, load balancing, hiding addresses, and terminating TLS. A <b>transparent proxy</b> does the same without the client being configured, because the network quietly redirects traffic to it.',
+    ideas:[['Forward proxy: protects and controls clients','Placed at the edge of a network. It can cache popular pages, block sites, log usage, require login and hide internal addresses. The server sees the proxy, not the client.'],['Reverse proxy: protects and scales servers','Placed in front of servers. It spreads load across backends, terminates TLS once, caches, compresses, absorbs attacks and hides how many servers exist. The client sees one address.'],['HTTPS goes through a tunnel','A proxy cannot read encrypted traffic, so the client sends CONNECT host:443 and the proxy just relays bytes. It sees the host name and volume, not the content, unless the company installs its own trusted certificate and decrypts (TLS inspection).'],['Headers keep the story straight','Via names the proxies on the path. X-Forwarded-For (or Forwarded) tells the backend the real client address, because the TCP connection comes from the proxy.']],
+    facts:[['Layer','Application (sees HTTP); a tunnel works at the TCP level'],['Common ports','3128 (Squid), 8080, 1080 (SOCKS)'],['Typical software','Squid, NGINX, HAProxy, Envoy, CDNs'],['Not the same as','A VPN, which tunnels all traffic at the network level']],
+    dropNote:'TCP resends the segment on that leg. Each side of a proxy is a separate TCP connection, so a loss on one leg is repaired on that leg only.',
+    scenarios:[
+      {id:'fwd',l:'Forward proxy (HTTP)',d:'A laptop is configured to use the company proxy. The first request is fetched from the internet, the second comes from the proxy\'s cache.',
+       actors:[{n:'Laptop',s:'192.168.1.23'},{n:'Forward proxy',s:'192.168.1.5:3128'},{n:'Web server',s:'93.184.216.34:80'}],
+       steps:function(){var a=lp(),b=pw(),a2=lp();return [
+        S(0,1,'GET http://example.com/','Request sent to the proxy, not the server','The laptop connects to the <b>proxy</b> (port 3128), not to the website. The request line contains the <b>full URL</b>, because the proxy needs to know where to go. The destination IP in the packet is the proxy\'s.',a.seg('c','PSH,ACK',[fwdReq()]),{hop:'lan'}),
+        N(1,'checks rules + cache','The proxy decides','It checks policy (is this site allowed? is the user logged in?) and looks in its cache. This page is not cached yet, so it must fetch it.',{st:{1:'cache MISS'}}),
+        S(1,2,'GET /','Second connection, to the server','The proxy opens its <b>own</b> connection and sends an ordinary request (path only). The server sees the proxy\'s address, never the laptop\'s. The proxy may add a <b>Via</b> or X-Forwarded-For header.',b.seg('c','PSH,ACK',[H.get('/',[['Via','1.1 proxy.corp']])]),{hop:0.5}),
+        S(2,1,'200 OK + HTML','Server answers the proxy','The proxy stores a copy according to the cache headers.',b.seg('s','PSH,ACK',[H.resp(200,'OK',[['Content-Type','text/html; charset=UTF-8']].concat(SRV,[['Cache-Control','max-age=604800']]),PAGE)]),{hop:0.5,st:{1:'cached copy'}}),
+        S(1,0,'200 OK (X-Cache: MISS)','Proxy relays it to the laptop','Same content, with Via and X-Cache headers showing a proxy handled it.',a.seg('s','PSH,ACK',[viaResp(false)]),{hop:'lan'}),
+        S(0,1,'GET http://example.com/','A colleague asks for the same page','Another request for the same URL a moment later.',a2.seg('c','PSH,ACK',[fwdReq()]),{hop:'lan',st:{1:'cache lookup'}}),
+        S(1,0,'200 OK (X-Cache: HIT)','Answered from cache, nothing sent upstream','No connection to the internet at all. The page comes back in about a millisecond and the <b>Age</b> header shows how old the stored copy is. Caching saves bandwidth and time for everyone on the network.',a2.seg('s','PSH,ACK',[viaResp(true,42)]),{hop:'lan',st:{1:'served from cache'}})
+       ];}},
+      {id:'connect',l:'HTTPS through a proxy',d:'The proxy cannot read encrypted traffic, so it opens a blind tunnel with CONNECT.',
+       actors:[{n:'Laptop',s:'192.168.1.23'},{n:'Forward proxy',s:'192.168.1.5:3128'},{n:'Web server',s:'93.184.216.34:443'}],
+       steps:function(){var a=lp(),b=H.est(H.flow(PX,40101,H.web,443,{ethOut:WE,ethIn:WI}));
+        var cn=PK.textLayer('HTTP request','app','CONNECT example.com:443 HTTP/1.1',[['Host','example.com:443'],['User-Agent','Mozilla/5.0'],['Proxy-Connection','keep-alive']],null,{startName:'Request line',start:'CONNECT asks the proxy to open a raw TCP connection to host:port and then simply relay bytes.'});
+        var ok=PK.textLayer('HTTP response','app','HTTP/1.1 200 Connection established',[['Proxy-Agent','squid/6.1']],null,{startName:'Status line',start:'The tunnel is open. From now on the proxy copies bytes in both directions without interpreting them.'});
+        var ch=H.clientHello(11);
+        return [
+        S(0,1,'CONNECT example.com:443','The only thing the proxy is asked to do','The laptop tells the proxy which host and port to connect to. This is the last plain HTTP you will see on this connection. The proxy can still apply policy: it knows the <b>host name</b> and can refuse it.',a.seg('c','PSH,ACK',[cn]),{hop:'lan'}),
+        S(1,2,'SYN (proxy to server)','The proxy opens a TCP connection','Behind the scenes the proxy completes a TCP handshake with the real server (not shown). Here is the second leg, ready to relay.',H.flow(PX,40101,H.web,443,{ethOut:WE,ethIn:WI}).seg('c','SYN'),{hop:0.5}),
+        S(1,0,'200 Connection established','Tunnel ready','The proxy answers with a status line. After this, it is just a pipe.',a.seg('s','PSH,ACK',[ok]),{hop:'lan',st:{1:'blind tunnel'}}),
+        S(0,1,'TLS ClientHello','The TLS handshake runs end to end','The laptop sends its ClientHello <i>through</i> the proxy, which forwards the bytes unchanged. The handshake and certificate check happen between laptop and website. The proxy cannot see passwords, cookies or pages.',a.seg('c','PSH,ACK',[ch]),{hop:'lan'}),
+        S(1,2,'TLS ClientHello (relayed)','Relayed byte for byte','The second leg carries exactly the same TLS bytes.',b.seg('c','PSH,ACK',[ch]),{hop:0.5}),
+        N(1,'sees host + sizes only','What the proxy can and cannot see','It sees the target host, the timing and how many bytes pass. It cannot read the content. Companies that need to inspect HTTPS install their own trusted root certificate on managed devices, and the proxy then terminates and re-creates TLS (<b>TLS inspection</b>). That is a man-in-the-middle by design, and it only works because the device is configured to trust it.',{})
+       ];}},
+      {id:'rev',l:'Reverse proxy',d:'A reverse proxy in front of two backend servers: TLS termination, load balancing and caching.',
+       actors:[{n:'Client',s:'198.51.100.77'},{n:'Reverse proxy',s:'203.0.113.10'},{n:'Backend A',s:'10.0.0.11:8080'},{n:'Backend B',s:'10.0.0.12:8080'}],
+       steps:function(){
+        var E1=['b8:27:eb:55:10:01','00:1d:e5:3a:07:c9'],E2=[E1[1],E1[0]],I1=['02:42:0a:00:00:05','02:42:0a:00:00:0b'],I2=[I1[1],I1[0]],J1=['02:42:0a:00:00:05','02:42:0a:00:00:0c'],J2=[J1[1],J1[0]];
+        var c=H.est(H.flow('198.51.100.77',50122,'203.0.113.10',443,{ethOut:E1,ethIn:E2})),c2=H.est(H.flow('198.51.100.77',50122,'203.0.113.10',443,{ethOut:E1,ethIn:E2,isnC:2918500000,isnS:1073900000}));
+        var a=H.est(H.flow('10.0.0.5',40001,'10.0.0.11',8080,{ethOut:I1,ethIn:I2})),b=H.est(H.flow('10.0.0.5',40002,'10.0.0.12',8080,{ethOut:J1,ethIn:J2}));
+        function bk(path){return H.get(path,[['X-Forwarded-For','198.51.100.77'],['X-Forwarded-Proto','https'],['Via','1.1 edge-proxy']]);}
+        function pg(n){return H.resp(200,'OK',[['Content-Type','text/html; charset=UTF-8'],['X-Backend',n],['Cache-Control','max-age=60']],PAGE);}
+        return [
+        S(0,1,'HTTPS request (encrypted)','The client talks to the proxy only','The client believes it is talking to the website. The packet is addressed to the proxy\'s public address, and the content is TLS-encrypted.',c.seg('c','PSH,ACK',[H.tlsApp(150,5,'TLS Record: encrypted HTTP request')]),{hop:1}),
+        N(1,'terminates TLS, picks backend','The proxy does the heavy lifting','It decrypts the request (<b>TLS termination</b>, so the backends need no certificates or crypto), checks for a cached copy, and picks a backend using round-robin or least connections. This one goes to Backend A.',{st:{1:'decrypted'}}),
+        S(1,2,'GET / (plain HTTP)','Request forwarded inside the data centre','A fresh connection on the private network. Look at the headers the proxy added: <b>X-Forwarded-For</b> carries the real client IP, since the TCP source is now the proxy. <b>X-Forwarded-Proto</b> says the client used https.',a.seg('c','PSH,ACK',[bk('/')]),{hop:'lan',st:{2:'serving'}}),
+        S(2,1,'200 OK','Backend answers','The backend never talked to the internet.',a.seg('s','PSH,ACK',[pg('A')]),{hop:'lan'}),
+        S(1,0,'200 OK (encrypted)','Proxy encrypts and returns it','The reply goes back to the client inside TLS and a copy is cached for 60 seconds.',c.seg('s','PSH,ACK',[H.tlsApp(620,6,'TLS Record: encrypted HTTP response')]),{hop:1,st:{1:'cached 60 s'}}),
+        S(0,1,'HTTPS request (encrypted)','A different page is requested','A new request. It is not in the cache.',c2.seg('c','PSH,ACK',[H.tlsApp(152,7,'TLS Record: encrypted HTTP request')]),{hop:1}),
+        S(1,3,'GET /about (plain HTTP)','Load balancing: this time Backend B','The proxy spreads load, so the request goes to the next backend. If a backend died, health checks would mark it down and the proxy would stop sending traffic to it. Clients would not notice.',b.seg('c','PSH,ACK',[bk('/about')]),{hop:'lan',st:{3:'serving'}}),
+        S(3,1,'200 OK','Backend B answers','The second backend replies in the same way.',b.seg('s','PSH,ACK',[pg('B')]),{hop:'lan'}),
+        S(1,0,'200 OK (encrypted)','Relayed to the client','The client has no idea two servers exist. Add more backends and the address stays the same.',c2.seg('s','PSH,ACK',[H.tlsApp(620,8,'TLS Record: encrypted HTTP response')]),{hop:1})
+       ];}}
+    ],
+    quiz:[
+      {q:'What is the main difference between a forward and a reverse proxy?',o:['Forward proxies are faster','A forward proxy acts for clients; a reverse proxy acts for servers','Reverse proxies cannot cache','Forward proxies use UDP'],a:1,h:'Think about who configures it and who it protects.',x:'A forward proxy sits with the clients and fetches things for them. A reverse proxy sits in front of servers and receives requests for them.'},
+      {q:'Why does a browser send CONNECT example.com:443 to a proxy?',o:['To ask for a cached page','To open a tunnel so TLS can run end to end','To change DNS','To log in'],a:1,h:'The proxy cannot read HTTPS.',x:'CONNECT turns the proxy into a blind byte relay, so the TLS handshake and data pass through untouched.'},
+      {q:'Behind a reverse proxy, how does a backend learn the real client IP?',o:['From the TCP source address','From a header such as X-Forwarded-For','From ARP','It cannot'],a:1,h:'The TCP connection comes from the proxy.',x:'The proxy adds the client address in X-Forwarded-For (or Forwarded). Backends must only trust it from their own proxy.'},
+      {q:'Which is NOT a typical benefit of a reverse proxy?',o:['Load balancing','TLS termination','Hiding the number of backend servers','Reading end-to-end encrypted HTTPS between a client and a different site'],a:3,h:'It only handles traffic addressed to it.',x:'A reverse proxy handles its own site\'s traffic. Reading HTTPS between a client and a different site would need TLS inspection by a forward proxy with a trusted certificate.'}
+    ]
+  });
+})();
+/* ===== Journey lab: a whole page load ===== */
+(function(){
+  var S=H.S,N=H.N;
+  function arpF(op,src,dst,sha,spa,tha,tpa){
+    var pad=PK.L('Padding','link',[PK.fraw('Padding',PK.fill(18,0),'Frames must be at least 60 bytes, so short ones are padded.','18 zero bytes')]);
+    return PK.done([PK.eth(src,dst,0x0806),PK.arp(op,sha,spa,tha,tpa),pad],{});
+  }
+  var A_EX={name:'example.com',type:'A',ttl:3600,data:H.web};
+  LAB.add({
+    id:'journey',n:'The journey',name:'The journey: what happens when you open a website',kind:'all',extra:'budget',rto:1000,hop:1,
+    tagline:'Type example.com and press Enter. Here is every packet that makes the page appear, in order.',
+    why:'Each protocol in this lab has a single job, and loading one web page uses most of them in sequence: ARP finds the router, DNS finds the server\'s address, TCP opens a reliable connection, TLS secures it, and HTTP finally asks for the page. Step through the whole thing, then visit each lab for the details.',
+    ideas:[['Layers cooperate','Each layer wraps the one above it. The inspector shows Ethernet, IP, TCP, TLS and HTTP stacked in one frame.'],['Round trips are the cost','DNS, TCP and TLS each add waiting before the first byte. Drag the round-trip slider to feel it.'],['Everything is reused','Caches and open connections skip steps. A second visit is much faster than the first.']],
+    facts:[['Protocols used','ARP, DNS, UDP, IP, TCP, TLS, HTTP'],['Round trips before data','About 3 on a cold start'],['Cold-start waiting','DNS + TCP + TLS before the request'],['Fastest case','Everything cached, connection reused']],
+    dropNote:'The sender waits, then sends the same packet again. This one packet costs a full timeout.',
+    scenarios:[{id:'load',l:'Cold page load',d:'First visit: nothing is cached and no connection exists. Use the speed control and step through, or press Play.',
+     actors:[{n:'Laptop',s:'192.168.1.23'},{n:'Router',s:'192.168.1.1'},{n:'DNS resolver',s:'1.1.1.1'},{n:'Web server',s:'93.184.216.34'}],
+     steps:function(){
+      var f=H.est(H.flow(H.lap,51514,H.web,443)),t=H.flow(H.lap,51514,H.web,443);
+      var q=H.udp('out',H.res,53811,53,[H.dns({id:0xa1b2,q:['example.com','A'],rd:true})],{id:0xa1b2});
+      var r=H.udp('in',H.res,53,53811,[H.dns({id:0xa1b2,q:['example.com','A'],resp:true,rd:true,ra:true,an:[A_EX]})],{id:0xa1b3,ttl:58});
+      return [
+        N(0,'URL: https://example.com','You press Enter','The browser knows the name but not the address. First it needs to reach the router, so it checks whether it knows the router\'s MAC address.'),
+        S(0,1,'who has 192.168.1.1?','ARP: find the router','Link layer. A broadcast question, because Ethernet needs a MAC address.',arpF(1,H.lapMac,H.bc,H.lapMac,H.lap,'00:00:00:00:00:00',H.rtr),{hop:'lan'}),
+        S(1,0,'192.168.1.1 is at 9c:3d…','ARP reply','The router answers directly. Now frames can be addressed to it.',arpF(2,H.rtrMac,H.lapMac,H.rtrMac,H.rtr,H.lapMac,H.lap),{hop:'lan'}),
+        S(0,2,'example.com A?','DNS: what is the address?','A UDP datagram to the resolver, relayed by the router. The Ethernet destination is the router while the IP destination is 1.1.1.1.',q,{hop:0.3}),
+        S(2,0,'A 93.184.216.34','DNS answer','The resolver (possibly after asking the root, .com and example.com servers) returns the address. The browser can now open a connection.',r,{hop:0.3,st:{0:'knows 93.184.216.34'}}),
+        S(0,3,'SYN','TCP handshake 1/3','Open a reliable connection to port 443.',t.seg('c','SYN'),{st:{0:'SYN_SENT'}}),
+        S(3,0,'SYN-ACK','TCP handshake 2/3','The server agrees.',t.seg('s','SYN,ACK'),{st:{3:'SYN_RCVD'}}),
+        S(0,3,'ACK','TCP handshake 3/3','The connection is established after one round trip.',t.seg('c','ACK'),{st:{0:'TCP open',3:'TCP open'}}),
+        S(0,3,'ClientHello','TLS: start the secure session','The browser offers its encryption options, names the site (SNI) and sends its key share.',t.seg('c','PSH,ACK',[H.clientHello(11)])),
+        S(3,0,'ServerHello + certificate','TLS: server flight','Keys are agreed and the encrypted flight carries the certificate.',t.seg('s','PSH,ACK',[H.serverHello13(41),H.ccs(),H.tlsApp(1000,77,'TLS Record: encrypted handshake')]),{st:{3:'keys derived'}}),
+        S(0,3,'Finished','TLS: browser verifies and finishes','The certificate is checked. The secure channel is ready.',t.seg('c','PSH,ACK',[H.ccs(),H.tlsApp(58,81,'TLS Record: encrypted Finished')]),{st:{0:'secure channel',3:'secure channel'}}),
+        S(0,3,'GET / (encrypted)','HTTP request inside TLS','Only now does the request go out. On the wire it is just encrypted bytes.',t.seg('c','PSH,ACK',[H.tlsApp(128,90,'TLS Record: encrypted HTTP request')])),
+        S(3,0,'200 OK + HTML (encrypted)','HTTP response inside TLS','The page arrives. The browser decrypts it and starts rendering.',t.seg('s','PSH,ACK',[H.tlsApp(620,91,'TLS Record: encrypted HTTP response')]),{st:{0:'rendering page'}}),
+        N(0,'page appears','Done','Four waiting periods came before the first content byte: DNS, TCP, TLS and the request itself. Open the latency calculator below to see how caching, TLS 1.3, QUIC and connection reuse remove them.',{})
+      ];}}],
+    quiz:[
+      {q:'In which order do these usually happen on a cold start?',o:['TLS, TCP, DNS, HTTP','DNS, TCP, TLS, HTTP','HTTP, DNS, TCP, TLS','TCP, DNS, HTTP, TLS'],a:1,h:'You need an address before connecting, and a connection before securing it.',x:'DNS finds the address, TCP connects, TLS secures, HTTP asks for the page.'},
+      {q:'Why does ARP appear before the DNS query?',o:['DNS needs the router\'s MAC address to send frames','ARP is part of DNS','It does not','The server asked for it'],a:0,h:'Every frame needs a destination MAC.',x:'The DNS query leaves the laptop inside a frame addressed to the router.'},
+      {q:'What is the best way to cut the waiting before the first byte?',o:['Lower the round-trip time and remove handshakes (CDN, caching, reuse, QUIC)','Use a bigger monitor','Send larger packets','Disable TCP'],a:0,h:'Every handshake costs a round trip.',x:'Each handshake costs about one round trip, so closer servers and fewer handshakes win.'}
+    ]
+  });
+})();
+LAB.boot();
+</script>
+</body>
+</html>
